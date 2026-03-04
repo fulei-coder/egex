@@ -1,0 +1,77 @@
+# SmolVLA 训练配置 - RealMan RM65
+#
+# SmolVLA 是轻量级 VLA (500M 参数)
+# 支持语言条件控制，适合消费级 GPU
+#
+# ⚠️ 硬件要求: 12GB+ VRAM
+#
+# 用法:
+#   python -m lerobot.scripts.lerobot_train --config configs/smolvla_realman.yaml
+
+dataset:
+  repo_id: lerobot/pick_cube_30fps
+  root: data/pick_cube_30fps
+  video_backend: pyav
+
+policy:
+  type: smolvla
+  repo_id: your_name/smolvla_realman_pick_cube
+
+  # SmolVLA 核心参数
+  n_obs_steps: 1
+  chunk_size: 50
+  n_action_steps: 50
+
+  # VLM 骨干
+  vlm_model_name: HuggingFaceTB/SmolVLM2-500M-Video-Instruct
+  load_vlm_weights: true
+
+  # 图像预处理
+  resize_imgs_with_padding: [512, 512]
+  tokenizer_max_length: 48
+
+  # Flow Matching
+  num_steps: 10
+
+  # ⭐ 显存优化（关键！）
+  freeze_vision_encoder: true   # 冻结视觉编码器
+  train_expert_only: true       # 只训练 Action Expert
+  train_state_proj: true
+
+  # VLM 架构
+  num_vlm_layers: 16
+  num_expert_layers: -1
+  expert_width_multiplier: 0.75
+  attention_mode: cross_attn
+
+  # 优化器
+  optimizer_lr: 1.0e-4
+  optimizer_betas: [0.9, 0.95]
+  optimizer_weight_decay: 1.0e-10
+  optimizer_grad_clip_norm: 10.0
+
+  # 学习率调度
+  scheduler_warmup_steps: 1000
+  scheduler_decay_steps: 30000
+  scheduler_decay_lr: 2.5e-6
+
+batch_size: 4
+steps: 50000
+
+save_checkpoint: true
+save_freq: 2500
+eval_freq: 5000
+log_freq: 50
+
+output_dir: outputs/smolvla_realman_pick_cube
+
+seed: 42
+num_workers: 2
+
+wandb:
+  enable: false
+
+# 显存估算:
+# freeze + train_expert_only: ~10-14GB
+# RTX 4080 12GB: batch_size=4 可行
+# 如果 OOM: 减小 batch_size 到 2

@@ -1,0 +1,54 @@
+# ACT 训练配置 - RealMan RM65
+#
+# ACT (Action Chunking with Transformers) 是推荐的入门策略
+# 训练快、显存小、效果稳定
+#
+# 用法:
+#   python -m lerobot.scripts.lerobot_train --config configs/act_realman.yaml
+
+dataset:
+  repo_id: lerobot/pick_cube_30fps
+  root: data/pick_cube_30fps
+  video_backend: pyav
+
+policy:
+  type: act
+  repo_id: your_name/act_realman_pick_cube
+
+  # ACT 核心参数
+  chunk_size: 50              # 一次预测50步动作
+  n_action_steps: 50          # 全部执行（配合 Temporal Ensemble）
+  n_obs_steps: 1              # ACT 只看当前帧
+
+  # Transformer 架构
+  vision_backbone: resnet18
+  pretrained_backbone_weights: ResNet18_Weights.IMAGENET1K_V1
+  dim_model: 512
+  n_heads: 8
+  n_encoder_layers: 4
+  n_decoder_layers: 1
+  use_vae: true
+  latent_dim: 32
+  n_vae_encoder_layers: 4
+
+  # 正则化
+  dropout: 0.1
+  kl_weight: 10.0             # KL散度权重（控制VAE正则化强度）
+
+# 训练参数
+batch_size: 8
+steps: 100000
+
+# 检查点
+save_checkpoint: true
+save_freq: 2500
+eval_freq: 10000
+log_freq: 100
+
+output_dir: outputs/act_realman_pick_cube
+
+seed: 42
+num_workers: 4
+
+wandb:
+  enable: false

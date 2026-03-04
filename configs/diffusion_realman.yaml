@@ -1,0 +1,60 @@
+# Diffusion Policy 训练配置 - RealMan RM65
+#
+# Diffusion Policy 使用扩散模型生成动作序列
+# 适合多模态动作分布的任务
+#
+# 用法:
+#   python -m lerobot.scripts.lerobot_train --config configs/diffusion_realman.yaml
+
+dataset:
+  repo_id: lerobot/pick_cube_30fps
+  root: data/pick_cube_30fps
+  video_backend: pyav
+
+policy:
+  type: diffusion
+  repo_id: your_name/diffusion_realman_pick_cube
+
+  # Diffusion 核心参数
+  n_obs_steps: 2              # 看最近2帧观测
+  horizon: 16                 # 预测16步视野
+  n_action_steps: 8           # 实际执行8步
+
+  # 视觉骨干
+  vision_backbone: resnet18
+  pretrained_backbone_weights: null
+  use_group_norm: true        # 小batch时比BatchNorm稳定
+  spatial_softmax_num_keypoints: 32
+
+  # UNet 结构
+  down_dims: [512, 1024, 2048]
+  kernel_size: 5
+  n_groups: 8
+  diffusion_step_embed_dim: 128
+  use_film_scale_modulation: true
+
+  # 扩散过程
+  noise_scheduler_type: DDPM
+  num_train_timesteps: 100
+  beta_schedule: squaredcos_cap_v2
+  prediction_type: epsilon    # 预测噪声
+  clip_sample: true
+
+  # 推理
+  num_inference_steps: 10     # DDIM加速采样
+
+batch_size: 64
+steps: 100000
+
+save_checkpoint: true
+save_freq: 5000
+eval_freq: 10000
+log_freq: 100
+
+output_dir: outputs/diffusion_realman_pick_cube
+
+seed: 42
+num_workers: 4
+
+wandb:
+  enable: false

@@ -1,0 +1,29 @@
+# Core Framework
+# Install LeRobot first: pip install lerobot
+# See: https://github.com/huggingface/lerobot
+
+# Hardware Drivers
+pyrealsense2>=2.55.1          # Intel RealSense SDK
+openvr>=1.26.701              # SteamVR / Vive Tracker
+
+# Data Processing
+h5py>=3.10.0                  # HDF5 read/write
+numpy>=1.24.0                 # Numerical computing
+opencv-python>=4.8.0          # Image processing
+Pillow>=10.0.0                # Image format conversion
+
+# Deep Learning (CUDA 11.8+ recommended)
+torch>=2.1.0                  # PyTorch
+torchvision>=0.16.0           # Vision utilities
+
+# Robotics SDK
+# RealMan RM_API2: Download from https://www.realman-robotics.cn/
+# Install: pip install Robotic_Arm-***.whl
+
+# Math / Transforms
+tf-transformations>=1.13.0    # Quaternion/Euler transforms
+scipy>=1.11.0                 # Scientific computing
+
+# Optional: VLA models
+# transformers>=4.40.0        # HuggingFace Transformers (for Pi0/SmolVLA)
+# accelerate>=0.27.0          # Training acceleration

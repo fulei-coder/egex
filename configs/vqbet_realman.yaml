@@ -1,0 +1,83 @@
+# VQ-BeT 训练配置 - RealMan RM65
+#
+# VQ-BeT 是两阶段训练策略:
+#   阶段1 (0~20k步): 训练 VQ-VAE 码本 (动作离散化)
+#   阶段2 (20k+步):  训练 GPT 预测器
+#
+# ⚠️ 注意: VQ-BeT 仅支持单图像输入
+#
+# 用法:
+#   python -m lerobot.scripts.lerobot_train --config configs/vqbet_realman.yaml
+
+dataset:
+  repo_id: lerobot/pick_cube_30fps
+  root: data/pick_cube_30fps
+  video_backend: pyav
+
+policy:
+  type: vqbet
+  repo_id: your_name/vqbet_realman_pick_cube
+
+  # 输入特征（VQ-BeT 只支持单图像）
+  input_features:
+    observation.images.cam_wrist:
+      type: VISUAL
+      shape: [3, 480, 640]
+    observation.state:
+      type: STATE
+      shape: [7]
+  output_features:
+    action:
+      type: ACTION
+      shape: [7]
+
+  # VQ-BeT 核心参数
+  n_obs_steps: 5              # 观测历史（比ACT长）
+  n_action_pred_token: 3      # 预测3个动作token
+  action_chunk_size: 5        # 每个token代表5步
+
+  # 视觉骨干
+  vision_backbone: resnet18
+  pretrained_backbone_weights: null
+  use_group_norm: true
+  spatial_softmax_num_keypoints: 32
+  crop_shape: [84, 84]
+  crop_is_random: true
+
+  # VQ-VAE 参数
+  n_vqvae_training_steps: 20000
+  vqvae_n_embed: 16
+  vqvae_embedding_dim: 256
+  vqvae_enc_hidden_dim: 128
+
+  # GPT 参数
+  gpt_block_size: 500
+  gpt_input_dim: 512
+  gpt_output_dim: 512
+  gpt_n_layer: 8
+  gpt_n_head: 8
+  gpt_hidden_dim: 512
+  dropout: 0.1
+
+  # 损失权重
+  offset_loss_weight: 10000.0
+  primary_code_loss_weight: 5.0
+  secondary_code_loss_weight: 0.5
+
+  bet_softmax_temperature: 0.1
+
+batch_size: 88
+steps: 120000
+
+save_checkpoint: true
+save_freq: 5000
+eval_freq: 10000
+log_freq: 100
+
+output_dir: outputs/vqbet_realman_pick_cube
+
+seed: 42
+num_workers: 2
+
+wandb:
+  enable: false
