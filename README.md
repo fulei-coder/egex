@@ -26,7 +26,7 @@
 - **多策略对比**：同一数据集、同一硬件上 5 种策略的训练与推理对比，带实测数据
 - **工程细节记录**：频率对齐铁律、conda/ROS2 进程隔离、推理后处理（EMA+死区）等实际部署中的坑和解决方案
 
-> 底层硬件平台见 [realman-ros2-platform](https://github.com/modestapprentice/realman-ros2-platform)
+> 底层硬件平台见 [realman-ros2-platform](https://github.com/Humble2Full/realman-ros2-platform)
 
 ---
 
@@ -139,7 +139,7 @@ lerobot-realman-vla/
 
 ```bash
 # 克隆本项目
-git clone https://github.com/modestapprentice/lerobot-realman-vla.git
+git clone https://github.com/Humble2Full/lerobot-realman-vla.git
 cd lerobot-realman-vla
 
 # 一键安装（创建conda环境 + 安装依赖）

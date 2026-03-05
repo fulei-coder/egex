@@ -47,7 +47,7 @@ This project implements a complete imitation learning pipeline for the **RealMan
 
 ```bash
 # Clone and setup
-git clone https://github.com/modestapprentice/lerobot-realman-vla.git
+git clone https://github.com/Humble2Full/lerobot-realman-vla.git
 cd lerobot-realman-vla
 bash setup.sh
 
