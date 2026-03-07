@@ -262,13 +262,16 @@ python scripts/inference.py --task "pick up the cube"
 
 ## 🙏 致谢
 
-- [HuggingFace LeRobot](https://github.com/huggingface/lerobot) — 模仿学习框架
-- [睿尔曼智能](https://www.realman-robotics.cn/) — RM65 机械臂
-- [ACT (Zhao et al., 2023)](https://arxiv.org/abs/2304.13705) — Action Chunking with Transformers
-- [Diffusion Policy (Chi et al., 2023)](https://arxiv.org/abs/2303.04137)
-- [VQ-BeT (Lee et al., 2024)](https://arxiv.org/abs/2403.03181)
-- [Pi0 (Black et al., 2024)](https://www.physicalintelligence.company/blog/pi0)
-- [SmolVLA (HuggingFace, 2024)](https://huggingface.co/HuggingFaceTB/SmolVLM2-500M-Video-Instruct)
+- [**HuggingFace LeRobot**](https://github.com/huggingface/lerobot) (Apache-2.0) — 训练框架和数据格式转换流程基于 LeRobot 官方源码
+- [**睿尔曼智能 RM_API2**](https://github.com/RealManRobot/RM_API2) (Apache-2.0) — 机械臂通信 SDK
+- [**OpenVR / triad_openvr**](https://github.com/TriadSemi/triad_openvr) — `hardware/vive_tracker.py` 参考了其 Tracker 位姿读取方案并重写
+- [ACT (Zhao et al., 2023)](https://arxiv.org/abs/2304.13705)、[Diffusion Policy (Chi et al., 2023)](https://arxiv.org/abs/2303.04137)、[VQ-BeT (Lee et al., 2024)](https://arxiv.org/abs/2403.03181)、[Pi0 (Black et al., 2024)](https://www.physicalintelligence.company/blog/pi0)、[SmolVLA (HuggingFace, 2024)](https://huggingface.co/HuggingFaceTB/SmolVLM2-500M-Video-Instruct) — 算法实现均来自 LeRobot 框架内置模块
+
+### 合作贡献
+
+`scripts/collect_data.py` 中 Vive Tracker 遥操作采集模式的初始代码由实验室同门合作提供，后续由本项目作者进行重构，增加了示教模式、双相机支持、数据格式化等功能。
+
+> 详细的第三方依赖及许可证信息见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
 
 ---
 

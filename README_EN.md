@@ -86,3 +86,16 @@ python scripts/inference.py \
 ## License
 
 Apache License 2.0. See [LICENSE](LICENSE) for details.
+
+## Acknowledgments
+
+- [**HuggingFace LeRobot**](https://github.com/huggingface/lerobot) (Apache-2.0) — Training framework and data format conversion based on LeRobot official source code
+- [**RealMan RM_API2**](https://github.com/RealManRobot/RM_API2) (Apache-2.0) — Robot arm communication SDK
+- [**OpenVR / triad_openvr**](https://github.com/TriadSemi/triad_openvr) — `hardware/vive_tracker.py` references its Tracker pose reading approach and was rewritten for RM65
+- All algorithm implementations (ACT, Diffusion Policy, VQ-BeT, SmolVLA, Pi0) come from LeRobot's built-in modules
+
+### Collaboration
+
+The initial Vive Tracker teleoperation code in `scripts/collect_data.py` was co-developed with a lab colleague. Subsequent refactoring (teaching mode, dual-camera support, data formatting) was done by the project author.
+
+> See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for full third-party attribution.
