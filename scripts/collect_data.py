@@ -14,8 +14,10 @@ rosrun ScepterROS scepter_camera
 终端3
 conda activate lerobot
 cd ~/lerobot-realman-vla
-python3 scripts/collect_data.py  --teaching
 
+python3 scripts/collect_data.py  --teaching
+如果原始 hdf5 存到E盘
+python3 scripts/collect_data.py --teaching --save-dir /media/a104/1252BAD252BABA35/raw_hdf5/pick_cube
 """
 
 """

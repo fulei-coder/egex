@@ -21,6 +21,15 @@ python scripts/convert_to_lerobot.py \
   --repo-id lerobot/pick_cube_15fps \
   --fps 15 \
   --task "pick up the cube and place it in the basket"
+
+如果原始 hdf5 存到这个盘，转换时也用这个路径：
+
+python scripts/convert_to_lerobot.py \
+  --input-dir /media/a104/1252BAD252BABA35/raw_hdf5/pick_cube \
+  --output-dir /media/a104/1252BAD252BABA35/pick_cube_15fps \
+  --repo-id local/pick_cube_15fps \
+  --fps 15 \
+  --task "pick up the cube and place it in the basket"
 """
 
 import h5py
