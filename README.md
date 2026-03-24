@@ -142,6 +142,8 @@ lerobot-realman-vla/
 git clone https://github.com/Humble2Full/lerobot-realman-vla.git
 cd lerobot-realman-vla
 
+# git clone https://gitee.com/RealManRobot/RM_API2.git
+
 # 一键安装（创建conda环境 + 安装依赖）
 bash setup.sh
 
@@ -169,7 +171,7 @@ python scripts/collect_data.py \
     --fps 30 \
     --teaching
 ```
-
+python3 scripts/collect_data.py --arm-ip 192.168.1.18 --save-dir data/raw_hdf5 --fps 30 --teaching
 ### 3. 数据转换
 
 ```bash
