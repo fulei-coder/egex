@@ -1,5 +1,16 @@
 # 🤖 LeRobot-RealMan-VLA
 
+push到github
+
+cd ~/lerobot-realman-vla
+git status
+git add .
+git commit -m "update training config and data scripts"
+git push
+
+
+
+
 <div align="center">
 
 **基于 [LeRobot](https://github.com/huggingface/lerobot) 框架的睿尔曼机械臂 VLA 全流程方案**
@@ -32,7 +43,7 @@
 
 ## 📌 项目简介
 
-本项目在 HuggingFace LeRobot 框架上，实现了**睿尔曼 RM65 六轴机械臂 + 自主夹爪**的完整模仿学习流程。通过 Vive Tracker 遥操作采集演示数据，支持 **ACT / Diffusion Policy / VQ-BeT / SmolVLA / Pi0** 等多种策略的训练与实机部署。
+本项目在 HuggingFace LeRobot 框架上，实现了**睿尔曼 RM63 六轴机械臂 + 自主夹爪**的完整模仿学习流程。通过 Vive Tracker 遥操作采集演示数据，支持 **ACT / Diffusion Policy / VQ-BeT / SmolVLA / Pi0** 等多种策略的训练与实机部署。
 
 > 全流程实机验证通过。ACT 策略在 164 条演示数据、31K 训练步后达到 90%+ 的 pick-and-place 成功率。文档包含实际部署中的问题排查与解决方案。
 
@@ -64,7 +75,7 @@
 
 | 组件 | 型号 | 说明 |
 |------|------|------|
-| 机械臂 | 睿尔曼 RM65-B | 6自由度，TCP/IP通信 |
+| 机械臂 | 睿尔曼 RM63-B | 6自由度，TCP/IP通信 |
 | 夹爪 | FAE2M86C | Modbus RTU 协议 |
 | 遥操作 | HTC Vive Tracker 3.0 | OpenVR/SteamVR |
 | 顶部相机 | Intel RealSense D435i | 640×480@30fps |
@@ -175,7 +186,7 @@ python3 scripts/collect_data.py --arm-ip 192.168.1.18 --save-dir data/raw_hdf5 -
 ### 3. 数据转换
 
 ```bash
-python scripts/convert_to_lerobot.py \
+python3 scripts/convert_to_lerobot.py \
     --input-dir data/raw_hdf5/pick_cube \
     --output-dir data/pick_cube_30fps \
     --repo-id lerobot/pick_cube_30fps \
