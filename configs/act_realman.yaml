@@ -11,7 +11,10 @@ dataset:
   repo_id: local/pick_cube_15fps
   root: data/pick_cube_15fps
   video_backend: pyav
-
+# dataset:
+#   repo_id: local/pick_cube_15fps
+#   root: /media/a104/1252BAD252BABA35/pick_cube_15fps
+#   video_backend: pyav
 policy:
   type: act
   repo_id: your_name/act_realman_pick_cube
