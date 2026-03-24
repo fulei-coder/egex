@@ -1,6 +1,23 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
+# 运行前请先执行以下命令：
+"""
+终端1
+source /opt/ros/noetic/setup.bash && roscore
+
+终端2
+source /opt/ros/noetic/setup.bash && \
+source ~/ScepterSDK/3rd-PartyPlugin/ROS/devel/setup.bash && \
+rosrun ScepterROS scepter_camera
+
+终端3
+conda activate lerobot
+cd ~/lerobot-realman-vla
+python3 scripts/collect_data.py  --teaching
+
+"""
+
 """
 数据采集脚本 — RealMan RM65 + Vive Tracker + 双相机
 
@@ -157,13 +174,8 @@ def ensure_ros_node(node_name="lerobot_ds87_rgb_collector"):
         _ros_inited = True
 
 
-# ============ DS87 ROS RGB 相机模块（不使用 cv_bridge） ============
+# ============ DS87 ROS RGB 相机模块============
 class DS87RosCamera:
-    """
-    从 ROS 话题直接订阅 sensor_msgs/Image，不用 cv_bridge。
-    默认订阅 /Scepter/color/image_raw
-    也可改为 /Scepter/transformedColor/image_raw
-    """
 
     def __init__(self, topic=DEFAULT_DS87_RGB_TOPIC, width=640, height=480):
         self.topic = topic
@@ -217,15 +229,6 @@ class DS87RosCamera:
             self.last_warn_time = now
 
     def _decode_ros_image(self, msg):
-        """
-        手工解析 sensor_msgs/Image
-        常见 encoding:
-        - rgb8
-        - bgr8
-        - rgba8
-        - bgra8
-        - mono8
-        """
 
         h = int(msg.height)
         w = int(msg.width)
@@ -613,6 +616,7 @@ def main():
         help='DS87 ROS 图像话题，默认 /Scepter/color/image_raw，也可改为 /Scepter/transformedColor/image_raw'
     )
     parser.add_argument('--save-dir', type=str, default='data/raw_hdf5', help='数据保存目录')
+    # parser.add_argument('--save-dir', type=str, default='data/raw_hdf5/pick_cube', help='数据保存目录')
     parser.add_argument('--task-name', type=str, default='task_pick_cube', help='任务名称')
     parser.add_argument('--fps', type=int, default=15, help='采集帧率，当前统一使用15')
     parser.add_argument('--teaching', action='store_true', help='示教模式（不用Vive）')

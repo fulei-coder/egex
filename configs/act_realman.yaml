@@ -7,8 +7,9 @@
 #   python -m lerobot.scripts.lerobot_train --config configs/act_realman.yaml
 
 dataset:
-  repo_id: lerobot/pick_cube_30fps
-  root: data/pick_cube_30fps
+  # repo_id: lerobot/pick_cube_15fps
+  repo_id: local/pick_cube_15fps
+  root: data/pick_cube_15fps
   video_backend: pyav
 
 policy:

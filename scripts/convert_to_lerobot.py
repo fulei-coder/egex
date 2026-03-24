@@ -10,13 +10,17 @@ HDF5 → LeRobot v3 数据集转换
 
 ⚠️ 重要：--fps 必须与采集时的帧率一致！
 
+第一次需要  pip install lerobot
+
 用法:
-    python scripts/convert_to_lerobot.py \\
-        --input-dir data/raw_hdf5/pick_cube \\
-        --output-dir data/pick_cube_30fps \\
-        --repo-id lerobot/pick_cube_30fps \\
-        --fps 30 \\
-        --task "pick up the cube and place it in the basket"
+
+cd ~/lerobot-realman-vla
+python scripts/convert_to_lerobot.py \
+  --input-dir data/raw_hdf5 \
+  --output-dir data/pick_cube_15fps \
+  --repo-id lerobot/pick_cube_15fps \
+  --fps 15 \
+  --task "pick up the cube and place it in the basket"
 """
 
 import h5py

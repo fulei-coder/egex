@@ -1,4 +1,9 @@
 #!/usr/bin/env python3
+
+"""
+python scripts/view_hdf5.py --file data/raw_hdf5/task_pick_cube_1.hdf5
+"""
+
 import h5py
 import cv2
 import numpy as np
