@@ -3,21 +3,17 @@
 
 # 运行前请先执行以下命令：
 """
-终端1
-source /opt/ros/noetic/setup.bash && roscore
+终端1 (启动相机 ROS 2 节点)
+source /opt/ros/humble/setup.bash
+source ~/ScepterSDK/3rd-PartyPlugin/ROS2/install/setup.bash
+ros2 run ScepterROS scepter_camera
 
-终端2
-source /opt/ros/noetic/setup.bash && \
-source ~/ScepterSDK/3rd-PartyPlugin/ROS/devel/setup.bash && \
-rosrun ScepterROS scepter_camera
-
-终端3
+终端2 (运行数据采集脚本)
 conda activate lerobot
 cd ~/lerobot-realman-vla
-
 python3 scripts/collect_data.py  --teaching
-如果原始 hdf5 存到E盘
-python3 scripts/collect_data.py --teaching --save-dir /media/a104/1252BAD252BABA35/raw_hdf5/pick_cube
+# 如果原始 hdf5 存到E盘
+# python3 scripts/collect_data.py --teaching --save-dir /media//1252BAD252BABA35/raw_hdf5/pick_cube
 """
 
 """
@@ -44,6 +40,10 @@ import time
 import threading
 import sys
 import os
+
+# 屏蔽由于容器或系统缺少字体库导致的 OpenCV(Qt) 警告弹字
+os.environ["QT_LOGGING_RULES"] = "*.debug=false;qt.qpa.*=false;qt.text.font.*=false"
+
 import h5py
 import numpy as np
 import cv2
@@ -53,13 +53,14 @@ import argparse
 DEFAULT_ARM_IP = "192.168.1.18"
 DEFAULT_ARM_PORT = 8080
 
-DEFAULT_CAM_TOP_SERIAL = "346122070612"  # D435 顶部
+DEFAULT_CAM_TOP_SERIAL = "346122070612"  # D435 
+# DEFAULT_CAM_TOP_SERIAL = "108222250854"  # D455 
 DEFAULT_TRACKER_SERIAL = "LHR-00000000"
 
 DEFAULT_DS87_RGB_TOPIC = "/Scepter/color/image_raw"
 DEFAULT_DS87_RGB_TRANSFORMED_TOPIC = "/Scepter/transformedColor/image_raw"
 
-RM_SDK_PATH = "/home/a104/RM_API2/Python"
+RM_SDK_PATH = "/home/tony/RM_API2/Python"
 if RM_SDK_PATH not in sys.path:
     sys.path.append(RM_SDK_PATH)
 
@@ -153,12 +154,20 @@ class D435Camera:
                 pass
 
 
-# ============ ROS 初始化 ============
+# ============ ROS 2 初始化 ============
 _ros_init_lock = threading.Lock()
 _ros_inited = False
+_ros_node = None
+
+def _ros_spin_loop(node):
+    import rclpy
+    try:
+        rclpy.spin(node)
+    except Exception as e:
+        print(f"[ROS2] Spin exited: {e}")
 
 def ensure_ros_node(node_name="lerobot_ds87_rgb_collector"):
-    global _ros_inited
+    global _ros_inited, _ros_node
     with _ros_init_lock:
         if _ros_inited:
             return
@@ -170,9 +179,17 @@ def ensure_ros_node(node_name="lerobot_ds87_rgb_collector"):
                 "ROS Python 环境缺少 yaml 模块。请先执行: python -m pip install PyYAML"
             ) from e
 
-        import rospy
-        if not rospy.core.is_initialized():
-            rospy.init_node(node_name, anonymous=True, disable_signals=True)
+        import rclpy
+        if not rclpy.ok():
+            rclpy.init(args=None)
+        
+        # ROS 2 需要显式的 Node 对象
+        _ros_node = rclpy.create_node(node_name)
+        
+        # 启动后台处理回调的 spin 线程
+        spin_thread = threading.Thread(target=_ros_spin_loop, args=(_ros_node,), daemon=True)
+        spin_thread.start()
+        
         _ros_inited = True
 
 
@@ -196,30 +213,38 @@ class DS87RosCamera:
         try:
             ensure_ros_node()
 
-            import rospy
+            import rclpy
             from sensor_msgs.msg import Image
+            from rclpy.qos import QoSProfile, QoSHistoryPolicy, QoSReliabilityPolicy
+            
+            global _ros_node
 
-            self.sub = rospy.Subscriber(
-                self.topic,
+            qos_profile = QoSProfile(
+                history=QoSHistoryPolicy.KEEP_LAST,
+                depth=1,
+                reliability=QoSReliabilityPolicy.BEST_EFFORT
+            )
+
+            self.sub = _ros_node.create_subscription(
                 Image,
+                self.topic,
                 self._callback,
-                queue_size=1,
-                buff_size=2**24,
+                qos_profile
             )
             self.is_active = True
-            print(f"[DS87-ROS] subscribed topic: {self.topic}")
+            print(f"[DS87-ROS2] subscribed topic: {self.topic}")
 
             time.sleep(2.0)
             if self.frame_count == 0:
                 print(
-                    f"[!] DS87-ROS subscribed but no image received from topic: {self.topic}\n"
-                    f"    请检查: rostopic hz {self.topic}"
+                    f"[!] DS87-ROS2 subscribed but no image received from topic: {self.topic}\n"
+                    f"    请检查: ros2 topic hz {self.topic}"
                 )
 
         except Exception as e:
-            print(f"[!] DS87-ROS init failed: {e}")
+            print(f"[!] DS87-ROS2 init failed: {e}")
             print("[!] 请确认:")
-            print("    1) 已 source ROS 工作空间")
+            print("    1) 已 source ROS 2 工作空间")
             print("    2) 已启动相机节点")
             print(f"    3) 话题存在: {self.topic}")
             self.is_active = False
@@ -306,7 +331,7 @@ class DS87RosCamera:
             img = self._decode_ros_image(msg)
             if img is None:
                 self._safe_warn(
-                    f"[DS87-ROS] unsupported/invalid image: encoding={msg.encoding}, "
+                    f"[DS87-ROS2] unsupported/invalid image: encoding={msg.encoding}, "
                     f"size=({msg.height},{msg.width}), step={msg.step}",
                     interval_sec=2.0
                 )
@@ -327,15 +352,15 @@ class DS87RosCamera:
                 try:
                     cv2.imwrite("/tmp/ds87_ros_first_frame.jpg", img)
                     print(
-                        f"[DS87-ROS] first RGB frame saved: "
+                        f"[DS87-ROS2] first RGB frame saved: "
                         f"/tmp/ds87_ros_first_frame.jpg, "
                         f"encoding={msg.encoding}, shape={img.shape}, mean={img.mean():.2f}"
                     )
                 except Exception as e:
-                    print(f"[DS87-ROS] save first frame failed: {e}")
+                    print(f"[DS87-ROS2] save first frame failed: {e}")
 
         except Exception as e:
-            self._safe_warn(f"[DS87-ROS] callback error: {e}", interval_sec=1.0)
+            self._safe_warn(f"[DS87-ROS2] callback error: {e}", interval_sec=1.0)
 
     def get_frame(self):
         with self.lock:
@@ -343,7 +368,7 @@ class DS87RosCamera:
 
         if float(frame.mean()) < 3.0 and self.is_active:
             self._safe_warn(
-                f"[WARN] DS87-ROS frame looks dark, frame_count={self.frame_count}, topic={self.topic}",
+                f"[WARN] DS87-ROS2 frame looks dark, frame_count={self.frame_count}, topic={self.topic}",
                 interval_sec=2.0
             )
         return frame
@@ -360,7 +385,9 @@ class DS87RosCamera:
     def close(self):
         try:
             if self.sub is not None:
-                self.sub.unregister()
+                global _ros_node
+                _ros_node.destroy_subscription(self.sub)
+                self.sub = None
         except Exception:
             pass
 
@@ -690,6 +717,28 @@ def main():
         print("> ", end='', flush=True)
 
         while True:
+            # 实时显示两个相机的图像
+            img_t = cam_top.get_frame()
+            img_w = cam_wrist.get_frame()
+            
+            # 判断两张图均已成功获取
+            if img_t is not None and img_w is not None and img_t.size > 0 and img_w.size > 0:
+                h_t, w_t = img_t.shape[:2]
+                h_w, w_w = img_w.shape[:2]
+                
+                # 如果两张图像高度不一致，先缩放其中的一张以进行平滑的水平拼接
+                if h_t != h_w:
+                    new_w_w = int((h_t / h_w) * w_w)
+                    img_w_resized = cv2.resize(img_w, (new_w_w, h_t))
+                    combined_img = cv2.hconcat([img_t, img_w_resized])
+                else:
+                    combined_img = cv2.hconcat([img_t, img_w])
+                    
+                # 显示图像弹窗（默认在后台刷取键盘消息1毫秒）
+                cv2.imshow("Cameras Preview", combined_img)
+            cv2.waitKey(1)
+
+            # 依旧保留原本的 select 机制处理终端下的标准输入字符
             rlist, _, _ = select.select([sys.stdin], [], [], 0.05)
             if not rlist:
                 continue
@@ -758,6 +807,7 @@ def main():
         cam_top.close()
         cam_wrist.close()
         arm.rm_delete_robot_arm()
+        cv2.destroyAllWindows()  # 新增销毁 OpenCV 窗口
         print("已退出")
 
 if __name__ == '__main__':

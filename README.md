@@ -182,7 +182,7 @@ python scripts/collect_data.py \
     --fps 30 \
     --teaching
 ```
-python3 scripts/collect_data.py --arm-ip 192.168.1.18 --save-dir data/raw_hdf5 --fps 30 --teaching
+python3 scripts/collect_data.py --arm-ip 192.168.1.18 --save-dir data/raw_hdf5 --fps 15 --teaching
 ### 3. 数据转换
 
 ```bash
@@ -214,7 +214,7 @@ bash scripts/train.sh act resume
 python scripts/inference.py \
     --model outputs/act_realman/checkpoints/100000/pretrained_model \
     --arm-ip <YOUR_ARM_IP> \
-    --freq 30
+    --freq 15
 ```
 
 ---

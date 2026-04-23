@@ -16,7 +16,7 @@
   # ACT
   python scripts/inference.py \\
       --model outputs/act_realman/checkpoints/100000/pretrained_model \\
-      --arm-ip <YOUR_ARM_IP> --freq 30
+      --arm-ip 192.168.1.18 --freq 15
 
   # SmolVLA (需要 task 描述)
   python scripts/inference.py \\
@@ -40,10 +40,16 @@ import argparse
 from pathlib import Path
 
 # ============ 默认硬件配置（根据你的硬件修改） ============
-DEFAULT_ARM_IP = "<YOUR_ARM_IP>"           # 出厂默认 192.168.2.18
+DEFAULT_ARM_IP = "192.168.1.18"           # 出厂默认 192.168.2.18
 DEFAULT_ARM_PORT = 8080
-DEFAULT_CAM_TOP_SERIAL = "<YOUR_TOP_CAM_SN>"     # rs-enumerate-devices | grep Serial
-DEFAULT_CAM_WRIST_SERIAL = "<YOUR_WRIST_CAM_SN>"
+# DEFAULT_CAM_TOP_SERIAL = "346122070612"  #435
+DEFAULT_CAM_TOP_SERIAL = "108222250854"     #455  # rs-enumerate-devices | grep Serial
+
+DEFAULT_DS87_RGB_TOPIC = "/Scepter/color/image_raw"
+
+RM_SDK_PATH = "/home/tony/RM_API2/Python"
+if RM_SDK_PATH not in sys.path:
+    sys.path.append(RM_SDK_PATH)
 
 # Modbus 夹爪参数
 GRIPPER_MODBUS_PORT = 1
@@ -220,6 +226,244 @@ class RealSenseCamera:
             pass
 
 
+# ============ ROS 2 初始化 ============
+_ros_init_lock = threading.Lock()
+_ros_inited = False
+_ros_node = None
+
+def _ros_spin_loop(node):
+    import rclpy
+    try:
+        rclpy.spin(node)
+    except Exception as e:
+        print(f"[ROS2] Spin exited: {e}")
+
+def ensure_ros_node(node_name="lerobot_ds87_rgb_collector"):
+    global _ros_inited, _ros_node
+    with _ros_init_lock:
+        if _ros_inited:
+            return
+
+        try:
+            import yaml  # noqa: F401
+        except Exception as e:
+            raise RuntimeError(
+                "ROS Python 环境缺少 yaml 模块。请先执行: python -m pip install PyYAML"
+            ) from e
+
+        import rclpy
+        if not rclpy.ok():
+            rclpy.init(args=None)
+        
+        # ROS 2 需要显式的 Node 对象
+        _ros_node = rclpy.create_node(node_name)
+        
+        # 启动后台处理回调的 spin 线程
+        spin_thread = threading.Thread(target=_ros_spin_loop, args=(_ros_node,), daemon=True)
+        spin_thread.start()
+        
+        _ros_inited = True
+
+
+# ============ DS87 ROS RGB 相机模块============
+class DS87RosCamera:
+
+    def __init__(self, topic=DEFAULT_DS87_RGB_TOPIC, width=640, height=480):
+        self.topic = topic
+        self.width = width
+        self.height = height
+        self.target_shape = (height, width, 3)
+
+        self.latest_color = np.zeros(self.target_shape, dtype=np.uint8)
+        self.lock = threading.Lock()
+        self.is_active = False
+        self.frame_count = 0
+        self.last_frame_time = 0.0
+        self.last_warn_time = 0.0
+        self.sub = None
+
+        try:
+            ensure_ros_node()
+
+            import rclpy
+            from sensor_msgs.msg import Image
+            from rclpy.qos import QoSProfile, QoSHistoryPolicy, QoSReliabilityPolicy
+            
+            global _ros_node
+
+            qos_profile = QoSProfile(
+                history=QoSHistoryPolicy.KEEP_LAST,
+                depth=1,
+                reliability=QoSReliabilityPolicy.BEST_EFFORT
+            )
+
+            self.sub = _ros_node.create_subscription(
+                Image,
+                self.topic,
+                self._callback,
+                qos_profile
+            )
+            self.is_active = True
+            print(f"[DS87-ROS2] subscribed topic: {self.topic}")
+
+            time.sleep(2.0)
+            if self.frame_count == 0:
+                print(
+                    f"[!] DS87-ROS2 subscribed but no image received from topic: {self.topic}\n"
+                    f"    请检查: ros2 topic hz {self.topic}"
+                )
+
+        except Exception as e:
+            print(f"[!] DS87-ROS2 init failed: {e}")
+            print("[!] 请确认:")
+            print("    1) 已 source ROS 2 工作空间")
+            print("    2) 已启动相机节点")
+            print(f"    3) 话题存在: {self.topic}")
+            self.is_active = False
+
+    def _safe_warn(self, msg, interval_sec=2.0):
+        now = time.time()
+        if now - self.last_warn_time >= interval_sec:
+            print(msg)
+            self.last_warn_time = now
+
+    def _decode_ros_image(self, msg):
+
+        h = int(msg.height)
+        w = int(msg.width)
+        enc = (msg.encoding or "").lower()
+        step = int(msg.step)
+        data = np.frombuffer(msg.data, dtype=np.uint8)
+
+        if h <= 0 or w <= 0:
+            return None
+
+        # bgr8
+        if enc == "bgr8":
+            expected = h * step
+            if data.size < expected:
+                return None
+            img = data[:expected].reshape((h, step))
+            img = img[:, :w * 3].reshape((h, w, 3))
+            return img.copy()
+
+        # rgb8
+        if enc == "rgb8":
+            expected = h * step
+            if data.size < expected:
+                return None
+            img = data[:expected].reshape((h, step))
+            img = img[:, :w * 3].reshape((h, w, 3))
+            img = cv2.cvtColor(img, cv2.COLOR_RGB2BGR)
+            return img.copy()
+
+        # bgra8
+        if enc == "bgra8":
+            expected = h * step
+            if data.size < expected:
+                return None
+            img = data[:expected].reshape((h, step))
+            img = img[:, :w * 4].reshape((h, w, 4))
+            img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+            return img.copy()
+
+        # rgba8
+        if enc == "rgba8":
+            expected = h * step
+            if data.size < expected:
+                return None
+            img = data[:expected].reshape((h, step))
+            img = img[:, :w * 4].reshape((h, w, 4))
+            img = cv2.cvtColor(img, cv2.COLOR_RGBA2BGR)
+            return img.copy()
+
+        # mono8
+        if enc == "mono8":
+            expected = h * step
+            if data.size < expected:
+                return None
+            img = data[:expected].reshape((h, step))
+            img = img[:, :w].reshape((h, w))
+            img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+            return img.copy()
+
+        # 未知编码：尝试按 3 通道裸解析
+        expected = h * w * 3
+        if data.size >= expected:
+            try:
+                img = data[:expected].reshape((h, w, 3))
+                return img.copy()
+            except Exception:
+                pass
+
+        return None
+
+    def _callback(self, msg):
+        try:
+            img = self._decode_ros_image(msg)
+            if img is None:
+                self._safe_warn(
+                    f"[DS87-ROS2] unsupported/invalid image: encoding={msg.encoding}, "
+                    f"size=({msg.height},{msg.width}), step={msg.step}",
+                    interval_sec=2.0
+                )
+                return
+
+            if img.shape[:2] != (self.height, self.width):
+                img = cv2.resize(img, (self.width, self.height))
+
+            if img.dtype != np.uint8:
+                img = np.clip(img, 0, 255).astype(np.uint8)
+
+            with self.lock:
+                self.latest_color = img.copy()
+                self.frame_count += 1
+                self.last_frame_time = time.time()
+
+            if self.frame_count == 1:
+                try:
+                    cv2.imwrite("/tmp/ds87_ros_first_frame.jpg", img)
+                    print(
+                        f"[DS87-ROS2] first RGB frame saved: "
+                        f"/tmp/ds87_ros_first_frame.jpg, "
+                        f"encoding={msg.encoding}, shape={img.shape}, mean={img.mean():.2f}"
+                    )
+                except Exception as e:
+                    print(f"[DS87-ROS2] save first frame failed: {e}")
+
+        except Exception as e:
+            self._safe_warn(f"[DS87-ROS2] callback error: {e}", interval_sec=1.0)
+
+    def get_frame(self):
+        with self.lock:
+            frame = self.latest_color.copy()
+
+        if float(frame.mean()) < 3.0 and self.is_active:
+            self._safe_warn(
+                f"[WARN] DS87-ROS2 frame looks dark, frame_count={self.frame_count}, topic={self.topic}",
+                interval_sec=2.0
+            )
+        return frame
+
+    def get_status(self):
+        age = time.time() - self.last_frame_time if self.last_frame_time > 0 else None
+        return {
+            "is_active": self.is_active,
+            "frame_count": self.frame_count,
+            "last_frame_age": age,
+            "topic": self.topic,
+        }
+
+    def close(self):
+        try:
+            if self.sub is not None:
+                global _ros_node
+                _ros_node.destroy_subscription(self.sub)
+                self.sub = None
+        except Exception:
+            pass
+
+
 # ============ 机械臂控制器 ============
 class RobotController:
     """机械臂控制（支持 EMA 平滑 + 死区过滤 + 异步夹爪）
@@ -239,31 +483,36 @@ class RobotController:
         self._cached_gripper_pos = 0.5
         self._smoothed_action = None
         self._last_joint_cmd = None
-        self.ema_alpha = 0.3       # EMA 系数 (0.3=平滑, 0.7=响应快)
-        self.joint_deadzone = 0.5  # 死区阈值(度)
+        self.ema_alpha = 1       # EMA 系数 (0.3=平滑, 0.7=响应快)
+        self.joint_deadzone = 10.0  # 死区阈值(度)
+        # self.ema_alpha = 0.3       # EMA 系数 (0.3=平滑, 0.7=响应快)
+        # self.joint_deadzone = 0.5  # 死区阈值(度)
 
-    def get_qpos(self, skip_gripper=True):
-        """获取当前 [6关节角 + 夹爪位置]"""
+    def get_qpos(self, include_gripper=False):
+        """获取当前状态。
+        - include_gripper=False: 返回 6 维关节角
+        - include_gripper=True : 返回 7 维 [6关节 + 夹爪]
+        """
         with self.lock:
             joint_state = self.arm.rm_get_current_arm_state()
             joint_angles = joint_state[1]['joint'][:6]
 
-            if skip_gripper:
-                gripper_pos = 0.5 if self._last_gripper_cmd is None else float(self._last_gripper_cmd)
-            else:
-                gripper_pos = self._cached_gripper_pos
-                try:
-                    ret, gripper_reg = self.arm.rm_read_multiple_holding_registers(self.gripper_params)
-                    if ret == 0 and gripper_reg:
-                        gripper_pos = 1 - register_to_dec(gripper_reg)
-                        self._cached_gripper_pos = gripper_pos
-                except Exception:
-                    pass
+            if not include_gripper:
+                return np.array(joint_angles, dtype=np.float32)
+
+            gripper_pos = self._cached_gripper_pos
+            try:
+                ret, gripper_reg = self.arm.rm_read_multiple_holding_registers(self.gripper_params)
+                if ret == 0 and gripper_reg:
+                    gripper_pos = 1 - register_to_dec(gripper_reg)
+                    self._cached_gripper_pos = gripper_pos
+            except Exception:
+                pass
 
             return np.array(joint_angles + [gripper_pos], dtype=np.float32)
 
     def set_qpos(self, qpos, use_smoothing=True):
-        """设置目标关节角 + 夹爪"""
+        """设置目标关节角；如果有第7维则同时控制夹爪。"""
         with self.lock:
             joint_target = qpos[:6].copy()
 
@@ -285,19 +534,20 @@ class RobotController:
                 if max_delta < self.joint_deadzone:
                     should_send = False
 
-            if should_send:
-                self.arm.rm_movej(joint_target.tolist(), 50, 0, 0, 0)
+            if should_send:   #speed
+                self.arm.rm_movej(joint_target.tolist(), 5, 0, 0, 0)
                 self._last_joint_cmd = joint_target.copy()
 
-            # 异步夹爪
-            gripper_binary = 1 if qpos[6] > 0.5 else 0
-            if self._last_gripper_cmd != gripper_binary:
-                self._last_gripper_cmd = gripper_binary
-                threading.Thread(
-                    target=self._try_write_gripper,
-                    args=(gripper_binary,),
-                    daemon=True
-                ).start()
+            # 只有 action 是 7 维时才控制夹爪
+            if len(qpos) > 6:
+                gripper_binary = 1 if qpos[6] > 0.5 else 0
+                if self._last_gripper_cmd != gripper_binary:
+                    self._last_gripper_cmd = gripper_binary
+                    threading.Thread(
+                        target=self._try_write_gripper,
+                        args=(gripper_binary,),
+                        daemon=True
+                    ).start()
 
     def _try_write_gripper(self, gripper_binary):
         """异步夹爪写入（失败静默）"""
@@ -347,7 +597,7 @@ def main():
     parser.add_argument('--arm-ip', type=str, default=DEFAULT_ARM_IP, help='机械臂IP')
     parser.add_argument('--arm-port', type=int, default=DEFAULT_ARM_PORT, help='机械臂端口')
     parser.add_argument('--cam-top', type=str, default=DEFAULT_CAM_TOP_SERIAL, help='顶部相机序列号')
-    parser.add_argument('--cam-wrist', type=str, default=DEFAULT_CAM_WRIST_SERIAL, help='腕部相机序列号')
+    parser.add_argument('--cam-wrist-topic', type=str, default=DEFAULT_DS87_RGB_TOPIC, help='腕部相机ROS2话题')
     parser.add_argument('--freq', type=float, default=15.0,
                         help='控制频率(Hz)，应与训练数据fps一致')
     parser.add_argument('--task', type=str, default='pick up the cube',
@@ -407,12 +657,12 @@ def main():
     robot = RobotController(arm, gripper_params)
 
     cam_top = RealSenseCamera(args.cam_top) if use_cam_high else None
-    cam_wrist = RealSenseCamera(args.cam_wrist) if use_cam_wrist else None
+    cam_wrist = DS87RosCamera(topic=args.cam_wrist_topic) if use_cam_wrist else None
     time.sleep(1)
 
-    # 3. 移动到初始位姿
-    print("\n[3/5] Moving to initial pose...")
-    robot.move_to_init(INIT_POSE)
+    # # 3. 移动到初始位姿
+    # print("\n[3/5] Moving to initial pose...")
+    # robot.move_to_init(INIT_POSE)
 
     # 4. 等待确认
     print("\n[4/5] Ready to execute")
@@ -434,7 +684,7 @@ def main():
             start_time = time.time()
 
             # 获取观测
-            qpos = robot.get_qpos(skip_gripper=True)
+            qpos = robot.get_qpos(include_gripper=False)
             observation = {
                 'observation.state': torch.from_numpy(qpos).float(),
             }
@@ -469,7 +719,9 @@ def main():
             elapsed = time.time() - start_time
             if step_count % 10 == 0:
                 actual_freq = 1.0 / elapsed if elapsed > 0 else 0
-                gripper_state = "闭合" if action[6] > 0.5 else "打开"
+                gripper_state = "N/A"
+                if len(action) > 6:
+                    gripper_state = "闭合" if action[6] > 0.5 else "打开"
                 print(f"[{policy_type}] Step {step_count:4d} | "
                       f"J1:{qpos[0]:6.1f}→{action[0]:6.1f} | "
                       f"夹爪:{gripper_state} | {actual_freq:.1f}Hz")

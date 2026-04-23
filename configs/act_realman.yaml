@@ -5,19 +5,22 @@
 #
 # 用法:
 #   python -m lerobot.scripts.lerobot_train --config configs/act_realman.yaml
-
 dataset:
-  # repo_id: lerobot/pick_cube_15fps
-  repo_id: local/pick_cube_15fps
-  root: data/pick_cube_15fps
+  repo_id: tony/pick_yellow_flower_15fps
+  root: data/pick_yellow_flower_15fps
   video_backend: pyav
+# dataset:
+#   # repo_id: lerobot/pick_cube_15fps
+#   repo_id: local/pick_cube_15fps
+#   root: data/pick_cube_15fps
+#   video_backend: pyav
 # dataset:
 #   repo_id: local/pick_cube_15fps
 #   root: /media/a104/1252BAD252BABA35/pick_cube_15fps
 #   video_backend: pyav
 policy:
   type: act
-  repo_id: your_name/act_realman_pick_cube
+  repo_id: tony/act_realman_pick_yellow_flower
 
   # ACT 核心参数
   chunk_size: 50              # 一次预测50步动作
@@ -41,15 +44,15 @@ policy:
 
 # 训练参数
 batch_size: 8
-steps: 100000
+steps: 10000
 
 # 检查点
 save_checkpoint: true
-save_freq: 2500
+save_freq: 500
 eval_freq: 10000
 log_freq: 100
 
-output_dir: outputs/act_realman_pick_cube
+output_dir: outputs/act_realman_pick_yellow_flower
 
 seed: 42
 num_workers: 4
