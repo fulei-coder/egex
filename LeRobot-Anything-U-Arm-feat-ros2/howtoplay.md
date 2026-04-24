@@ -1,9 +1,11 @@
 # 🔧 System Setup
 
+**⚠️ 重要声明：当前采集只使用 ROS2 流程，不使用 ROS1/Noetic/catkin/rosrun。**
+
 ## Prerequisites
 
-- **Ubuntu 20.04**
-- [**ROS Noetic**](https://wiki.ros.org/noetic/Installation/Ubuntu)
+- **Ubuntu 22.04** (Recommended for ROS2 Humble)
+- [**ROS2 Humble**](https://docs.ros.org/en/humble/Installation.html)
 - **Python 3.9+**
 
 ---
@@ -13,74 +15,54 @@
 1. **Install Python Dependencies**
 
    ```sh
-   # install both ros1 and simulation requirements
-   pip install -r overall_requirements.txt 
-   ```
-   
-   If your system doesn't support ROS1, you can install the dependencies without ROS1 with the following command which supports simulation teleoperation and check [this note](https://github.com/MINT-SJTU/Lerobot-Anything-U-arm/blob/main/src/simulation/README.md) . 
-   ```sh
+   # install required packages
    pip install -r requirements.txt
+   pip install -r ros2_requirements.txt
    ```
 
-3. **Build Catkin Workspace**
+2. **Build and Source Environment**
 
-   ```sh
-   catkin_make
-   source devel/setup.bash
+   Instead of `catkin_make`, use `colcon build` for ROS2:
+
+   ```bash
+   source /opt/ros/humble/setup.bash
+   # Make sure you are in the workspace root that contains src/uarm
+   colcon build
+   source install/setup.bash
    ```
 
-4. **Verify Installation**
-
-   ```sh
-   # Test if ROS can find the package
-   rospack find uarm
+   *If you do not have a full colcon workspace setup, you can still run the script directly using Python 3:*
+   ```bash
+   source /opt/ros/humble/setup.bash
+   python3 src/uarm/scripts/Uarm_teleop/servo_reader.py --ros-args -p serial_port:=/dev/ttyUSB0
    ```
 
 ---
 
-# 🤖 Plug-and-Play with Real Robot with ROS1
+# 🤖 Plug-and-Play with Real Robot with ROS2
 
-## 1. Start ROS Core
+## 1. Verify Teleop Arm Output & Publish Data
 
-Open a terminal and run:
-
-```sh
-roscore
-```
-
-## 2. Verify Teleop Arm Output
-
-In a new terminal, check servo readings:
+In a new terminal, check servo readings and publish to the ROS2 topic (No `roscore` needed in ROS2):
 
 ```sh
-rosrun uarm servo_zero.py
+source /opt/ros/humble/setup.bash
+conda activate lerobot
+python3 src/uarm/scripts/Uarm_teleop/servo_reader.py \
+  --ros-args -p serial_port:=/dev/ttyUSB0
 ```
 
-This will display real-time angles from all servos. You should check whether `SERIAL_PORT` is available on your device and modify the variable if necessary. 
+*Replace `/dev/ttyUSB0` with your actual serial port if different.*
 
-## 3. Publish Teleop Data
-
-Still in the second terminal, start the teleop publisher:
-
+Your teleop arm now publishes to the `/servo_angles` topic. You can verify it by opening another terminal and running:
 ```sh
-rosrun uarm servo_reader.py
+source /opt/ros/humble/setup.bash
+ros2 topic echo /servo_angles
 ```
 
-Your teleop arm now publishes to the `/servo_angles` topic.
+## 2. Control the Follower Arm (RealMan)
 
-## 4. Control the Follower Arm
-
-Choose your robot and run the corresponding script:
-
-- **For Dobot CR5:**
-  ```sh
-  rosrun uarm scripts/Follower_Arm/Dobot/servo2Dobot.py
-  ```
-
-- **For xArm:**
-  ```sh
-  rosrun uarm scripts/Follower_Arm/xarm/servo2xarm.py
-  ```
+Return to the main repository root and run the data collection or inference script as defined in the main project summaries, which will subscribe directly to the `/servo_angles` topic published by `servo_reader.py`.
 
 ---
 

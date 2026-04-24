@@ -249,7 +249,7 @@ def ensure_ros_node(node_name="lerobot_ds87_rgb_collector"):
         except Exception as e:
             raise RuntimeError(
                 "ROS Python 环境缺少 yaml 模块。请先执行: python -m pip install PyYAML"
-            ) from e
+            )
 
         import rclpy
         if not rclpy.ok():

@@ -1,8 +1,10 @@
+**⚠️ 重要声明：当前采集只使用 ROS2 流程，不使用 ROS1/Noetic/catkin/rosrun。**
+
 # 🤖 Lerobot Anything
 
 [![en](https://img.shields.io/badge/lang-en-blue.svg)](README.md)
 [![中文](https://img.shields.io/badge/lang-中文-brown.svg)](README_CN.md)
-[![ROS Noetic](https://img.shields.io/badge/ROS-Noetic-brightgreen.svg)](https://www.ros.org/)
+[![ROS Humble](https://img.shields.io/badge/ROS-Humble-brightgreen.svg)](https://www.ros.org/)
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
 [![Ubuntu](https://img.shields.io/badge/Ubuntu-20.04-orange.svg)](https://ubuntu.com/)
 [![Apache License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
@@ -45,7 +47,7 @@ LeRobot Anything is a **low-cost, universal, leader-follower teleoperation syste
 ### 🎯 Target Environment (Docker coming soon)
 
 - **OS**: Ubuntu 20.04
-- **ROS**: Noetic
+- **ROS**: Humble
 - **Simulation**: SAPIEN integration (Built upon [ManiSkill](https://github.com/haosulab/ManiSkill))
 
 ---
@@ -55,7 +57,7 @@ LeRobot Anything is a **low-cost, universal, leader-follower teleoperation syste
 | Feature                             | Description                                                                   |
 | ----------------------------------- | ----------------------------------------------------------------------------- |
 | 🔄**Universal Compatibility** | Four teleop configurations covering **most (95%) commercial robot arms** |
-| 📡**ROS Integration**         | Native ROS1 support with `/servo_angles` topic publishing                   |
+| 📡**ROS Integration**         | Native ROS2 support with `/servo_angles` topic publishing                   |
 | 🎮**Real-time Control**       | Low-latency servo angle transmission                                          |
 | 🔌**Plug & Play**             | Easy follower-arm integration with provided examples                          |
 | 🛠️**Extensible**            | Simple API for adding new robot support                                       |
