@@ -23,7 +23,30 @@ python scripts/collect_data.py \
     --task-name pick_cube \
     --fps 30 \
     --teaching
+
+# U-arm 6DoF 无夹爪调试（推荐第一阶段）
+python scripts/collect_data_uarm.py \
+    --arm-ip <YOUR_ARM_IP> \
+    --save-dir data/raw_hdf5/pick_cube \
+    --task-name task_pick_cube \
+    --map-config configs/uarm_realman_map.yaml \
+    --fps 15
 ```
+
+### U-arm 6DoF 模式说明
+
+- 当前仅执行 6 个关节，第 7 维预留给后续二指夹爪。
+- 采集文件中的 `qpos/action` 仍固定为 7 维，便于后续平滑升级。
+- 默认按 15 FPS 录制，与现有主链路配置保持一致。
+
+### U-arm 调试按键
+
+| 按键 | 功能 | 备注 |
+|------|------|------|
+| `c` | 标定 leader/follower 零位 | 启动后先执行 |
+| `w` / `e` | 启用/暂停跟随 | |
+| `s` / `d` | 开始/停止录制 | |
+| `q` | 退出 | |
 
 ### 操作按键
 

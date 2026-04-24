@@ -511,8 +511,8 @@ class RobotController:
 
             return np.array(joint_angles + [gripper_pos], dtype=np.float32)
 
-    def set_qpos(self, qpos, use_smoothing=True):
-        """设置目标关节角；如果有第7维则同时控制夹爪。"""
+    def set_qpos(self, qpos, use_smoothing=True, execute_gripper=False):
+        """设置目标关节角；可选执行第7维夹爪控制。"""
         with self.lock:
             joint_target = qpos[:6].copy()
 
@@ -538,8 +538,8 @@ class RobotController:
                 self.arm.rm_movej(joint_target.tolist(), 5, 0, 0, 0)
                 self._last_joint_cmd = joint_target.copy()
 
-            # 只有 action 是 7 维时才控制夹爪
-            if len(qpos) > 6:
+            # 只有显式启用时才执行第7维夹爪控制
+            if execute_gripper and len(qpos) > 6:
                 gripper_binary = 1 if qpos[6] > 0.5 else 0
                 if self._last_gripper_cmd != gripper_binary:
                     self._last_gripper_cmd = gripper_binary
@@ -602,6 +602,10 @@ def main():
                         help='控制频率(Hz)，应与训练数据fps一致')
     parser.add_argument('--task', type=str, default='pick up the cube',
                         help='VLA 任务描述 (Pi0/SmolVLA 需要)')
+    parser.add_argument('--state-with-gripper', action='store_true',
+                        help='观测状态包含夹爪维度（7维）')
+    parser.add_argument('--execute-gripper', action='store_true',
+                        help='执行 action 第7维夹爪控制（默认关闭）')
     parser.add_argument('--headless', action='store_true', help='无GUI模式')
     parser.add_argument('--offline', action='store_true', help='离线模式 (不从HuggingFace下载)')
     args = parser.parse_args()
@@ -684,7 +688,7 @@ def main():
             start_time = time.time()
 
             # 获取观测
-            qpos = robot.get_qpos(include_gripper=False)
+            qpos = robot.get_qpos(include_gripper=args.state_with_gripper)
             observation = {
                 'observation.state': torch.from_numpy(qpos).float(),
             }
@@ -713,7 +717,7 @@ def main():
             action = action_dict['action'][0].cpu().numpy()
 
             # 执行
-            robot.set_qpos(action)
+            robot.set_qpos(action, execute_gripper=args.execute_gripper)
 
             # 日志
             elapsed = time.time() - start_time
@@ -721,7 +725,10 @@ def main():
                 actual_freq = 1.0 / elapsed if elapsed > 0 else 0
                 gripper_state = "N/A"
                 if len(action) > 6:
-                    gripper_state = "闭合" if action[6] > 0.5 else "打开"
+                    if args.execute_gripper:
+                        gripper_state = "闭合" if action[6] > 0.5 else "打开"
+                    else:
+                        gripper_state = "已禁用"
                 print(f"[{policy_type}] Step {step_count:4d} | "
                       f"J1:{qpos[0]:6.1f}→{action[0]:6.1f} | "
                       f"夹爪:{gripper_state} | {actual_freq:.1f}Hz")

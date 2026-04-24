@@ -1,0 +1,36 @@
+leader_topic: /servo_angles
+leader_dim: 7
+robot_dim: 7
+active_dof: 6
+
+joint_map:
+  reorder: [0, 1, 2, 3, 4, 5]
+  sign: [1, -1, 1, 1, -1, 1]
+  scale: [1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
+  offset_deg: [0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+
+joint_limits_deg:
+  lower: [-170.0, -90.0, -170.0, -180.0, -120.0, -360.0]
+  upper: [170.0, 90.0, 170.0, 180.0, 120.0, 360.0]
+
+robot_init_qpos_deg: [-15.0, 3.0, 89.0, 0.5, 86.0, -15.0]
+robot_init_gripper: 0.0
+
+control:
+  loop_hz: 20
+  movej_speed: 5
+  use_ema: true
+  ema_alpha: 0.3
+  max_step_deg: 5.0
+  jump_reject_deg: 20.0
+
+gripper:
+  enabled: false
+  binary: true
+  placeholder_value: 0.0
+  leader_index: 6
+  leader_open_value: 0.0
+  leader_close_value: 0.48
+  robot_open_value: 0.0
+  robot_close_value: 1.0
+  threshold: 0.5

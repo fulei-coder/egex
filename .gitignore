@@ -44,3 +44,7 @@ wandb/
 
 # Private (面试材料，不纳入开源)
 _private/
+
+# Local data and outputs
+/data/
+/outputs/
