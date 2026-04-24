@@ -6,7 +6,7 @@
 [![中文](https://img.shields.io/badge/lang-中文-brown.svg)](README_CN.md)
 [![ROS Humble](https://img.shields.io/badge/ROS-Humble-brightgreen.svg)](https://www.ros.org/)
 [![Python](https://img.shields.io/badge/Python-3.8+-blue.svg)](https://www.python.org/)
-[![Ubuntu](https://img.shields.io/badge/Ubuntu-20.04-orange.svg)](https://ubuntu.com/)
+[![Ubuntu](https://img.shields.io/badge/Ubuntu-22.04-orange.svg)](https://ubuntu.com/)
 [![Apache License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
 
