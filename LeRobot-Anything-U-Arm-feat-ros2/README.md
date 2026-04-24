@@ -153,7 +153,7 @@ We're preparing comprehensive documentation including:
   - Virtual teleop setup mirroring physical hardware
   - Rapid prototyping and testing capabilities
   - Integration with existing SAPIEN workflows
-- [ ] **ROS2 Support**
+- [x] **ROS2 Support**
 - [ ] **Docker Image**
 - [ ] **Humanoid System: Config4**
 
