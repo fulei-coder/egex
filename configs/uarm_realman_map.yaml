@@ -19,6 +19,7 @@ robot_init_gripper: 0.0
 control:
   loop_hz: 20
   movej_speed: 5
+  leader_timeout_sec: 0.3
   use_ema: true
   ema_alpha: 0.3
   max_step_deg: 5.0
@@ -34,3 +35,7 @@ gripper:
   robot_open_value: 0.0
   robot_close_value: 1.0
   threshold: 0.5
+
+recording:
+  max_camera_age_sec: 0.5
+  min_image_mean: 3.0

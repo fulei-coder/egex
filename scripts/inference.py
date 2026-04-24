@@ -169,6 +169,18 @@ def register_to_dec(register_value):
             register_value[2] * 256 + register_value[3]) / 256000
 
 
+def _get_feature_dim(feature):
+    shape = getattr(feature, 'shape', None)
+    if shape is None:
+        return None
+    try:
+        if len(shape) == 0:
+            return None
+        return int(shape[-1])
+    except Exception:
+        return None
+
+
 # ============ RealSense 相机 ============
 import pyrealsense2 as rs
 
@@ -604,6 +616,10 @@ def main():
                         help='VLA 任务描述 (Pi0/SmolVLA 需要)')
     parser.add_argument('--state-with-gripper', action='store_true',
                         help='观测状态包含夹爪维度（7维）')
+    parser.add_argument('--state-gripper-placeholder', action='store_true',
+                        help='观测状态使用 7 维夹爪占位值，不读取 Modbus 夹爪状态')
+    parser.add_argument('--gripper-placeholder-value', type=float, default=0.0,
+                        help='观测状态第7维的夹爪占位值')
     parser.add_argument('--execute-gripper', action='store_true',
                         help='执行 action 第7维夹爪控制（默认关闭）')
     parser.add_argument('--headless', action='store_true', help='无GUI模式')
@@ -641,6 +657,31 @@ def main():
     use_cam_high = 'observation.images.cam_high' in input_features
     use_cam_wrist = 'observation.images.cam_wrist' in input_features
     print(f"      Input features: {list(input_features.keys())}")
+
+    state_feature = input_features.get('observation.state')
+    state_dim = _get_feature_dim(state_feature)
+    if state_dim is None:
+        raise RuntimeError("无法读取模型 observation.state 的维度，请检查模型配置")
+
+    if args.state_gripper_placeholder:
+        state_mode = 'placeholder'
+    elif args.state_with_gripper:
+        state_mode = 'real_gripper'
+    else:
+        state_mode = 'plain'
+
+    if state_dim == 7 and state_mode == 'plain':
+        raise RuntimeError(
+            "模型的 observation.state 是 7 维，但未显式启用 7D 状态模式。"
+            "请使用 --state-gripper-placeholder 或 --state-with-gripper。"
+        )
+    if state_dim == 6 and state_mode != 'plain':
+        raise RuntimeError(
+            "模型的 observation.state 是 6 维，但启用了 7D 状态模式。"
+            "请关闭 --state-gripper-placeholder / --state-with-gripper。"
+        )
+
+    print(f"      State dim: {state_dim} (mode={state_mode})")
 
     # 2. 初始化硬件
     print("\n[2/5] Initializing hardware...")
@@ -688,7 +729,14 @@ def main():
             start_time = time.time()
 
             # 获取观测
-            qpos = robot.get_qpos(include_gripper=args.state_with_gripper)
+            qpos = robot.get_qpos(include_gripper=False)
+            if args.state_gripper_placeholder:
+                qpos = np.concatenate([
+                    qpos,
+                    np.array([args.gripper_placeholder_value], dtype=np.float32)
+                ])
+            elif args.state_with_gripper:
+                qpos = robot.get_qpos(include_gripper=True)
             observation = {
                 'observation.state': torch.from_numpy(qpos).float(),
             }

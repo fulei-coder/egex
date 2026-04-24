@@ -90,6 +90,8 @@ class D435Camera:
         self.lock = threading.Lock()
         self.stopped = False
         self.is_active = False
+        self.frame_count = 0
+        self.last_frame_time = 0.0
 
         try:
             self.pipeline = rs.pipeline()
@@ -138,8 +140,19 @@ class D435Camera:
                     if frame_data.shape == self.target_shape:
                         with self.lock:
                             self.latest_color = frame_data.copy()
+                            self.frame_count += 1
+                            self.last_frame_time = time.time()
             except Exception:
                 pass
+
+    def get_status(self):
+        with self.lock:
+            return {
+                "is_active": self.is_active,
+                "frame_count": self.frame_count,
+                "last_frame_time": self.last_frame_time,
+                "age_sec": time.time() - self.last_frame_time if self.last_frame_time > 0 else 999.0
+            }
 
     def get_frame(self):
         with self.lock:
@@ -374,11 +387,12 @@ class DS87RosCamera:
         return frame
 
     def get_status(self):
-        age = time.time() - self.last_frame_time if self.last_frame_time > 0 else None
+        age = time.time() - self.last_frame_time if self.last_frame_time > 0 else 999.0
         return {
             "is_active": self.is_active,
             "frame_count": self.frame_count,
-            "last_frame_age": age,
+            "last_frame_time": self.last_frame_time,
+            "age_sec": age,
             "topic": self.topic,
         }
 
@@ -461,7 +475,7 @@ class ViveController:
 
     def enable(self):
         if self.vive_init_pos is None:
-            print("请先校准(v)")
+            print("请先校准(c)")
             return
         self.control_enabled = True
         print("遥控已启用")
@@ -706,7 +720,8 @@ def main():
     if args.teaching:
         print("单键命令: s=录制开始  d=停止并保存  q=退出")
     else:
-        print("单键命令: v=校准  w=遥控  e=停止遥控  s=录制开始  d=停止并保存  q=退出")
+        print("单键命令: c=校准  w=遥控  e=停止遥控  s=录制开始  d=停止并保存  q=退出")
+    print("建议流程: c -> w -> s -> 示教 -> d")
     print("-" * 50)
 
     old_settings = termios.tcgetattr(sys.stdin)
@@ -753,7 +768,7 @@ def main():
 
                 if cmd == 'q':
                     break
-                elif cmd == 'v' and not args.teaching:
+                elif cmd == 'c' and not args.teaching:
                     vive_ctrl.calibrate()
                 elif cmd == 'w' and not args.teaching:
                     vive_ctrl.enable()

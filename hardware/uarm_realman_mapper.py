@@ -47,8 +47,14 @@ class UarmRealmanMapper:
 
         self._prev_joint_target = None
 
-    def reset_state(self):
-        self._prev_joint_target = None
+    def reset_state(self, initial_target=None):
+        if initial_target is None:
+            self._prev_joint_target = None
+        else:
+            arr = np.asarray(initial_target, dtype=np.float32).reshape(-1)
+            if arr.size < 6:
+                raise ValueError("initial_target must have at least 6 dims")
+            self._prev_joint_target = arr[:6].copy()
 
     def get_gripper_placeholder(self):
         return float(self.gripper_placeholder)

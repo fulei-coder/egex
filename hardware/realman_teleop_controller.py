@@ -55,6 +55,7 @@ class RealmanTeleopController:
         command_buffer,
         loop_hz=20,
         movej_speed=5,
+        leader_timeout_sec=0.3,
         dry_run=False,
         execute_gripper=False,
         gripper_command_callback=None,
@@ -67,6 +68,7 @@ class RealmanTeleopController:
 
         self.loop_hz = float(loop_hz)
         self.movej_speed = float(movej_speed)
+        self.leader_timeout_sec = float(leader_timeout_sec)
         self.dry_run = bool(dry_run)
         self.execute_gripper = bool(execute_gripper)
         self.gripper_command_callback = gripper_command_callback
@@ -80,6 +82,7 @@ class RealmanTeleopController:
         self.robot_init_qpos = np.zeros(7, dtype=np.float32)
         self.last_action = np.zeros(7, dtype=np.float32)
         self.last_error = ""
+        self.last_movej_ret = 0
 
         self._thread = threading.Thread(target=self._loop, daemon=True)
         self._thread.start()
@@ -95,7 +98,7 @@ class RealmanTeleopController:
 
         self.zero_leader = leader.copy()
         self.robot_init_qpos = robot_init[:7].copy()
-        self.mapper.reset_state()
+        self.mapper.reset_state(initial_target=self.robot_init_qpos[:6])
         self.command_buffer.set(self.robot_init_qpos)
         self.last_action = self.robot_init_qpos.copy()
         self._calibrated = True
@@ -115,6 +118,7 @@ class RealmanTeleopController:
             "dry_run": self.dry_run,
             "execute_gripper": self.execute_gripper,
             "last_error": self.last_error,
+            "last_movej_ret": self.last_movej_ret,
         }
 
     def _loop(self):
@@ -125,26 +129,55 @@ class RealmanTeleopController:
 
             try:
                 if self._enabled and self._calibrated:
-                    leader, _, has_data = self.leader_subscriber.get()
-                    if has_data:
-                        action = self.mapper.map(
-                            leader=leader,
-                            zero_leader=self.zero_leader,
-                            robot_init_qpos=self.robot_init_qpos,
-                        )
+                    leader, leader_ts, has_data = self.leader_subscriber.get()
+                    now = time.time()
 
-                        if not self.dry_run:
-                            with self.arm_lock:
-                                self.arm.rm_movej(action[:6].tolist(), self.movej_speed, 0, 0, 0)
+                    if not has_data:
+                        self.last_error = "leader_no_data"
+                        elapsed = time.time() - tick_start
+                        sleep_time = interval - elapsed
+                        if sleep_time > 0:
+                            time.sleep(sleep_time)
+                        continue
 
-                        if self.execute_gripper and self.gripper_command_callback is not None:
-                            gripper_binary = 1 if float(action[6]) > 0.5 else 0
-                            if gripper_binary != self._last_gripper_binary:
-                                self._last_gripper_binary = gripper_binary
-                                self.gripper_command_callback(gripper_binary)
+                    if now - leader_ts > self.leader_timeout_sec:
+                        self.last_error = f"leader_stale:{now - leader_ts:.3f}s"
+                        self.disable()
+                        elapsed = time.time() - tick_start
+                        sleep_time = interval - elapsed
+                        if sleep_time > 0:
+                            time.sleep(sleep_time)
+                        continue
 
-                        self.last_action = action.copy()
-                        self.command_buffer.set(action)
+                    action = self.mapper.map(
+                        leader=leader,
+                        zero_leader=self.zero_leader,
+                        robot_init_qpos=self.robot_init_qpos,
+                    )
+
+                    if not self.dry_run:
+                        with self.arm_lock:
+                            ret = self.arm.rm_movej(action[:6].tolist(), self.movej_speed, 0, 0, 0)
+                        
+                        ret_code = ret[0] if isinstance(ret, (tuple, list)) else ret
+                        self.last_movej_ret = ret_code
+                        if ret_code != 0:
+                            self.last_error = f"rm_movej_failed:{ret_code}"
+                            self.disable()
+                            elapsed = time.time() - tick_start
+                            sleep_time = interval - elapsed
+                            if sleep_time > 0:
+                                time.sleep(sleep_time)
+                            continue
+
+                    if self.execute_gripper and self.gripper_command_callback is not None:
+                        gripper_binary = 1 if float(action[6]) > 0.5 else 0
+                        if gripper_binary != self._last_gripper_binary:
+                            self._last_gripper_binary = gripper_binary
+                            self.gripper_command_callback(gripper_binary)
+
+                    self.last_action = action.copy()
+                    self.command_buffer.set(action)
             except Exception as exc:
                 self.last_error = str(exc)
 
