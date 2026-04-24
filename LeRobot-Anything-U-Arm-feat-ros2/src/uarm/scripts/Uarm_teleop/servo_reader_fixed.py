@@ -8,14 +8,20 @@ import numpy as np
 from std_msgs.msg import Float64MultiArray
 
 class ServoReaderNode(Node):
+    """
+    ⚠️ 警告: 该脚本仅用于局部舵机 (0-2) 的读取调试。
+    请勿将其用于正式的数据采集。
+    正式遥操作采集请务必使用 `servo_reader.py`。
+    """
     def __init__(self):
         super().__init__("servo_reader_node")
         self.pub = self.create_publisher(Float64MultiArray, '/servo_angles', 10)
         self.rate = self.create_rate(50)
-        self.SERIAL_PORT = '/dev/ttyUSB0'
 
         # 声明参数并获取值
+        self.declare_parameter("serial_port", "/dev/ttyUSB0")
         self.declare_parameter("baudrate", 115200)
+        self.SERIAL_PORT = self.get_parameter("serial_port").get_parameter_value().string_value
         self.BAUDRATE = self.get_parameter("baudrate").get_parameter_value().integer_value
         self.ser = serial.Serial(self.SERIAL_PORT, self.BAUDRATE, timeout=0.1)
         self.get_logger().info("串口已打开")
