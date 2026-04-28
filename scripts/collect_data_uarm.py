@@ -86,8 +86,13 @@ class DataRecorder:
             "qpos": [],
             "action": [],
             "images_top": [],
+            "depth_top": [],
             "images_wrist": [],
+            "ee_pose": [],
             "timestamps": [],
+            "target_roi_exo": [],
+            "target_3d_base": [],
+            "grounding_valid": [],
             "leader_timestamp": [],
             "leader_age_sec": [],
             "controller_enabled": [],
@@ -113,6 +118,7 @@ class DataRecorder:
         gripper_placeholder=0.0,
         active_dof=6,
         recording_cfg=None,
+        calibration_cfg=None,
     ):
         self.arm = arm
         self.arm_lock = arm_lock
@@ -124,6 +130,17 @@ class DataRecorder:
         self.gripper_placeholder = float(gripper_placeholder)
         self.active_dof = int(active_dof)
         self.recording_cfg = recording_cfg or {}
+        self.calibration_cfg = calibration_cfg or {}
+        self.cam_high_meta = collect_common.get_camera_metadata(
+            self.calibration_cfg,
+            "cam_high",
+            fallback_intrinsics=self.cam_top.get_intrinsics() if hasattr(self.cam_top, "get_intrinsics") else None,
+        )
+        self.cam_wrist_meta = collect_common.get_camera_metadata(
+            self.calibration_cfg,
+            "cam_wrist",
+            fallback_intrinsics=None,
+        )
 
         self.is_recording = False
         self.filename = None
@@ -216,7 +233,11 @@ class DataRecorder:
                 action = np.asarray(action, dtype=np.float32).reshape(-1)[:7]
 
                 img_top = self.cam_top.get_frame()
+                depth_top = self.cam_top.get_depth_frame() if hasattr(self.cam_top, "get_depth_frame") else None
                 img_wrist = self.cam_wrist.get_frame()
+                with self.arm_lock:
+                    code, state = self.arm.rm_get_current_arm_state()
+                ee_pose = collect_common.extract_ee_pose_from_realman_state(state if code == 0 else {})
 
                 controller_status = self.controller.status()
                 leader_record = self.controller.leader_subscriber.get()
@@ -238,8 +259,15 @@ class DataRecorder:
                 self.data_buffer["qpos"].append(qpos)
                 self.data_buffer["action"].append(action)
                 self.data_buffer["images_top"].append(img_top)
+                self.data_buffer["depth_top"].append(
+                    np.asarray(depth_top if depth_top is not None else np.zeros(img_top.shape[:2], dtype=np.uint16), dtype=np.uint16)
+                )
                 self.data_buffer["images_wrist"].append(img_wrist)
+                self.data_buffer["ee_pose"].append(ee_pose.astype(np.float32))
                 self.data_buffer["timestamps"].append(timestamp)
+                self.data_buffer["target_roi_exo"].append(np.zeros(4, dtype=np.float32))
+                self.data_buffer["target_3d_base"].append(np.zeros(3, dtype=np.float32))
+                self.data_buffer["grounding_valid"].append(np.zeros(1, dtype=np.float32))
                 self.data_buffer["leader_timestamp"].append(leader_ts)
                 self.data_buffer["leader_age_sec"].append(leader_age)
                 self.data_buffer["controller_enabled"].append(controller_status["enabled"])
@@ -263,7 +291,12 @@ class DataRecorder:
 
         qpos = np.asarray(self.data_buffer["qpos"], dtype=np.float32)
         action = np.asarray(self.data_buffer["action"], dtype=np.float32)
+        depth_top = np.asarray(self.data_buffer["depth_top"], dtype=np.uint16)
+        ee_pose = np.asarray(self.data_buffer["ee_pose"], dtype=np.float32)
         timestamps = np.asarray(self.data_buffer["timestamps"], dtype=np.float64)
+        target_roi_exo = np.asarray(self.data_buffer["target_roi_exo"], dtype=np.float32)
+        target_3d_base = np.asarray(self.data_buffer["target_3d_base"], dtype=np.float32)
+        grounding_valid = np.asarray(self.data_buffer["grounding_valid"], dtype=np.float32)
         
         leader_timestamp = np.asarray(self.data_buffer["leader_timestamp"], dtype=np.float64)
         leader_age_sec = np.asarray(self.data_buffer["leader_age_sec"], dtype=np.float32)
@@ -303,10 +336,19 @@ class DataRecorder:
                     compression="gzip",
                 )
                 f.create_dataset(
+                    "observations/depth/cam_high",
+                    data=depth_top,
+                    compression="gzip",
+                )
+                f.create_dataset(
                     "observations/images/cam_wrist",
                     data=np.array(self.data_buffer["images_wrist"], dtype=np.uint8),
                     compression="gzip",
                 )
+                f.create_dataset("observations/ee_pose", data=ee_pose)
+                f.create_dataset("observations/grounding/target_roi_exo", data=target_roi_exo)
+                f.create_dataset("observations/grounding/target_3d_base", data=target_3d_base)
+                f.create_dataset("observations/grounding/valid", data=grounding_valid)
                 
                 f.create_dataset("metadata/leader_timestamp", data=leader_timestamp)
                 f.create_dataset("metadata/leader_age_sec", data=leader_age_sec)
@@ -319,9 +361,16 @@ class DataRecorder:
                 f.create_dataset("metadata/cam_wrist_age_sec", data=cam_wrist_age_sec)
                 f.create_dataset("metadata/cam_high_mean", data=cam_high_mean)
                 f.create_dataset("metadata/cam_wrist_mean", data=cam_wrist_mean)
+                f.create_dataset("metadata/cameras/cam_high/intrinsics", data=self.cam_high_meta["intrinsics_array"])
+                f.create_dataset("metadata/cameras/cam_high/dist_coeffs", data=self.cam_high_meta["dist_coeffs"])
+                f.create_dataset("metadata/cameras/cam_high/T_base_cam", data=self.cam_high_meta["transform"])
+                f.create_dataset("metadata/cameras/cam_wrist/intrinsics", data=self.cam_wrist_meta["intrinsics_array"])
+                f.create_dataset("metadata/cameras/cam_wrist/dist_coeffs", data=self.cam_wrist_meta["dist_coeffs"])
+                f.create_dataset("metadata/cameras/cam_wrist/T_ee_cam", data=self.cam_wrist_meta["transform"])
 
             print(f"保存: {os.path.basename(self.filename)} ({len(qpos)} frames)")
             print(f"  qpos shape={qpos.shape}, action shape={action.shape}")
+            print(f"  depth shape={depth_top.shape}, ee_pose shape={ee_pose.shape}")
         except Exception as e:
             print(f"[!] 保存失败: {e}")
 
@@ -341,6 +390,12 @@ def main():
     parser.add_argument("--active-dof", type=int, default=None, help="覆盖配置中的 active_dof（默认6）")
     parser.add_argument("--gripper-enabled", action="store_true", help="启用第7维夹爪执行（默认关闭）")
     parser.add_argument("--movej-speed", type=float, default=None, help="覆盖配置中的 rm_movej 速度")
+    parser.add_argument(
+        "--calibration-config",
+        type=str,
+        default="configs/calibration_realman.yaml",
+        help="相机与外参标定配置文件",
+    )
     args = parser.parse_args()
 
     if args.fps != 15:
@@ -362,6 +417,8 @@ def main():
     if args.gripper_enabled:
         map_cfg["gripper"]["enabled"] = True
 
+    calibration_cfg, calibration_path = collect_common.load_camera_calibration_config(args.calibration_config)
+
     # Stage-1 requirement: debug in 6DoF first, keep 7th dim as reserved interface.
     map_cfg["active_dof"] = int(max(1, min(6, map_cfg.get("active_dof", 6))))
 
@@ -375,12 +432,13 @@ def main():
     print("  U-arm -> RealMan 采集（6DoF执行，7DoF接口预留）")
     print("=" * 56)
     print(f"配置文件: {cfg_path}")
+    print(f"标定文件: {calibration_path}")
     print(f"active_dof: {map_cfg['active_dof']}")
     print(f"gripper.enabled: {bool(map_cfg.get('gripper', {}).get('enabled', False))}")
     print(f"dry_run: {args.dry_run}")
 
-    print("初始化顶部相机 (D435)...")
-    cam_top = collect_common.D435Camera(args.cam_top, fps=args.fps)
+    print("初始化顶部相机 (D435/D455 RGB-D)...")
+    cam_top = collect_common.D435Camera(args.cam_top, fps=args.fps, enable_depth=True)
 
     print("初始化腕部相机 (DS87 ROS RGB)...")
     cam_wrist = collect_common.DS87RosCamera(topic=args.ds87_topic)
@@ -427,7 +485,9 @@ def main():
         mapper=mapper,
         command_buffer=command_buffer,
         loop_hz=float(ctrl_cfg.get("loop_hz", 20)),
-        movej_speed=float(ctrl_cfg.get("movej_speed", 5)),        leader_timeout_sec=ctrl_cfg.get("leader_timeout_sec", 0.3),        dry_run=args.dry_run,
+        movej_speed=float(ctrl_cfg.get("movej_speed", 5)),
+        leader_timeout_sec=ctrl_cfg.get("leader_timeout_sec", 0.3),
+        dry_run=args.dry_run,
         execute_gripper=bool(map_cfg.get("gripper", {}).get("enabled", False)),
         gripper_command_callback=None,
     )
@@ -443,6 +503,7 @@ def main():
         gripper_placeholder=mapper.get_gripper_placeholder(),
         active_dof=map_cfg["active_dof"],
         recording_cfg=map_cfg.get("recording", {}),
+        calibration_cfg=calibration_cfg,
     )
 
     print("\n" + "-" * 56)

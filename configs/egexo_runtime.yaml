@@ -1,0 +1,23 @@
+target_locator:
+  mode: manual_roi
+  manual_roi_xyxy: [220, 160, 420, 360]
+  target_color: null
+  min_valid_depth_ratio: 0.02
+
+runtime_grounding:
+  enabled: true
+  fallback_when_invalid: true
+  use_soft_mask: true
+
+phase:
+  enabled: true
+  distance_threshold_m: 0.08
+  hard_switch_in_inference: false
+
+debug:
+  enabled: true
+  save_dir: debug/egexo
+  save_every_n_steps: 10
+  draw_exo_roi: true
+  draw_ego_projected_roi: true
+  save_phase_prob: true

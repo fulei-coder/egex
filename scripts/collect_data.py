@@ -40,6 +40,7 @@ import time
 import threading
 import sys
 import os
+from pathlib import Path
 
 # 屏蔽由于容器或系统缺少字体库导致的 OpenCV(Qt) 警告弹字
 os.environ["QT_LOGGING_RULES"] = "*.debug=false;qt.qpa.*=false;qt.text.font.*=false"
@@ -48,6 +49,7 @@ import h5py
 import numpy as np
 import cv2
 import argparse
+import yaml
 
 # ============ 配置区域 ============
 DEFAULT_ARM_IP = "192.168.1.18"
@@ -68,6 +70,149 @@ ROBOT_INIT_POS = np.array([-0.218, 0.06, 0.357])
 ROBOT_INIT_ORI = np.array([-3.126, 0.001, -0.015])
 # ============ 配置区域结束 ============
 
+SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SCRIPT_DIR.parent
+
+
+def resolve_repo_path(path_str):
+    path = Path(path_str)
+    if path.exists():
+        return path.resolve()
+
+    candidate = (REPO_ROOT / path_str).resolve()
+    if candidate.exists():
+        return candidate
+
+    raise FileNotFoundError(f"文件不存在: {path_str}")
+
+
+def load_yaml_file(path_str):
+    path = resolve_repo_path(path_str)
+    with path.open("r", encoding="utf-8") as f:
+        return yaml.safe_load(f), path
+
+
+def load_camera_calibration_config(path_str):
+    cfg, path = load_yaml_file(path_str)
+    if not isinstance(cfg, dict):
+        raise ValueError(f"标定配置格式错误: {path}")
+    return cfg, path
+
+
+def extract_ee_pose_from_realman_state(state):
+    """兼容不同 SDK 返回结构，统一输出 6D ee pose."""
+    if not isinstance(state, dict):
+        return np.zeros(6, dtype=np.float32)
+
+    candidates = ("pose", "tool_pose", "tcp_pose", "end_pose")
+    for key in candidates:
+        value = state.get(key)
+        if value is None:
+            continue
+        arr = np.asarray(value, dtype=np.float32).reshape(-1)
+        if arr.size >= 6:
+            return arr[:6].copy()
+
+    nested_candidates = ("pose", "tool_pose", "tcp_pose")
+    for container_key in ("arm_state", "current_state", "state"):
+        nested = state.get(container_key)
+        if not isinstance(nested, dict):
+            continue
+        for key in nested_candidates:
+            value = nested.get(key)
+            if value is None:
+                continue
+            arr = np.asarray(value, dtype=np.float32).reshape(-1)
+            if arr.size >= 6:
+                return arr[:6].copy()
+
+    return np.zeros(6, dtype=np.float32)
+
+
+def _normalize_intrinsics_dict(raw, width=0, height=0, depth_scale=0.0):
+    raw = raw or {}
+    fx = fy = cx = cy = 0.0
+    dist_coeffs = np.zeros(5, dtype=np.float32)
+
+    if "camera_matrix" in raw:
+        matrix = np.asarray(raw["camera_matrix"], dtype=np.float32).reshape(3, 3)
+        fx = float(matrix[0, 0])
+        fy = float(matrix[1, 1])
+        cx = float(matrix[0, 2])
+        cy = float(matrix[1, 2])
+    else:
+        fx = float(raw.get("fx", 0.0))
+        fy = float(raw.get("fy", 0.0))
+        cx = float(raw.get("cx", 0.0))
+        cy = float(raw.get("cy", 0.0))
+
+    if "image_size" in raw and isinstance(raw["image_size"], dict):
+        width = int(raw["image_size"].get("width", width))
+        height = int(raw["image_size"].get("height", height))
+    else:
+        width = int(raw.get("width", width))
+        height = int(raw.get("height", height))
+
+    if raw.get("dist_coeffs") is not None:
+        coeffs = np.asarray(raw["dist_coeffs"], dtype=np.float32).reshape(-1)
+        dist_coeffs[: min(5, coeffs.size)] = coeffs[:5]
+
+    depth_scale = float(raw.get("depth_scale", depth_scale))
+    return {
+        "fx": fx,
+        "fy": fy,
+        "cx": cx,
+        "cy": cy,
+        "width": width,
+        "height": height,
+        "depth_scale": depth_scale,
+        "dist_coeffs": dist_coeffs,
+    }
+
+
+def intrinsics_dict_to_array(intrinsics):
+    intr = _normalize_intrinsics_dict(intrinsics)
+    return np.asarray(
+        [
+            intr["fx"],
+            intr["fy"],
+            intr["cx"],
+            intr["cy"],
+            float(intr["width"]),
+            float(intr["height"]),
+            intr["depth_scale"],
+        ],
+        dtype=np.float32,
+    )
+
+
+def get_camera_metadata(calibration_cfg, cam_name, fallback_intrinsics=None):
+    cameras_cfg = (calibration_cfg or {}).get("cameras", {})
+    cam_cfg = cameras_cfg.get(cam_name, {})
+
+    intrinsics = _normalize_intrinsics_dict(
+        cam_cfg.get("intrinsics"),
+        width=(fallback_intrinsics or {}).get("width", 0),
+        height=(fallback_intrinsics or {}).get("height", 0),
+        depth_scale=(fallback_intrinsics or {}).get("depth_scale", 0.0),
+    )
+    if fallback_intrinsics:
+        for key in ("fx", "fy", "cx", "cy", "width", "height", "depth_scale"):
+            if abs(float(intrinsics.get(key, 0.0))) < 1e-8:
+                intrinsics[key] = float(fallback_intrinsics.get(key, 0.0))
+
+    transform_key = "T_base_cam" if cam_name == "cam_high" else "T_ee_cam"
+    transform_cfg = cam_cfg.get(transform_key, {})
+    matrix = np.asarray(transform_cfg.get("data", np.eye(4, dtype=np.float32).reshape(-1)), dtype=np.float32).reshape(4, 4)
+    return {
+        "intrinsics": intrinsics,
+        "intrinsics_array": intrinsics_dict_to_array(intrinsics),
+        "dist_coeffs": np.asarray(intrinsics.get("dist_coeffs", np.zeros(5, dtype=np.float32)), dtype=np.float32),
+        "transform": matrix,
+        "role": str(cam_cfg.get("role", "")),
+        "type": str(cam_cfg.get("type", "")),
+    }
+
 
 def get_next_filename(save_dir, task_name):
     os.makedirs(save_dir, exist_ok=True)
@@ -81,17 +226,22 @@ def get_next_filename(save_dir, task_name):
 import pyrealsense2 as rs
 
 class D435Camera:
-    def __init__(self, serial_number, width=640, height=480, fps=15):
+    def __init__(self, serial_number, width=640, height=480, fps=15, enable_depth=False):
         self.serial_number = str(serial_number)
         self.width, self.height = width, height
         self.fps = fps
+        self.enable_depth = bool(enable_depth)
         self.target_shape = (height, width, 3)
         self.latest_color = np.zeros(self.target_shape, dtype=np.uint8)
+        self.latest_depth = np.zeros((height, width), dtype=np.uint16)
         self.lock = threading.Lock()
         self.stopped = False
         self.is_active = False
         self.frame_count = 0
         self.last_frame_time = 0.0
+        self.intrinsics = None
+        self.depth_scale = 0.0
+        self.align = None
 
         try:
             self.pipeline = rs.pipeline()
@@ -109,6 +259,9 @@ class D435Camera:
             if self.serial_number:
                 self.config.enable_device(self.serial_number)
             self.config.enable_stream(rs.stream.color, width, height, rs.format.bgr8, fps)
+            if self.enable_depth:
+                self.config.enable_stream(rs.stream.depth, width, height, rs.format.z16, fps)
+                self.align = rs.align(rs.stream.color)
 
             profile = self.pipeline.start(self.config)
             self.is_active = True
@@ -122,9 +275,29 @@ class D435Camera:
             except Exception:
                 pass
 
+            try:
+                color_profile = profile.get_stream(rs.stream.color).as_video_stream_profile()
+                color_intr = color_profile.get_intrinsics()
+                self.intrinsics = {
+                    "fx": float(color_intr.fx),
+                    "fy": float(color_intr.fy),
+                    "cx": float(color_intr.ppx),
+                    "cy": float(color_intr.ppy),
+                    "width": int(color_intr.width),
+                    "height": int(color_intr.height),
+                    "depth_scale": 0.0,
+                }
+                if self.enable_depth:
+                    depth_sensor = profile.get_device().first_depth_sensor()
+                    self.depth_scale = float(depth_sensor.get_depth_scale())
+                    self.intrinsics["depth_scale"] = self.depth_scale
+            except Exception as exc:
+                print(f"[WARN] 读取 RealSense 内参失败: {exc}")
+
             self.thread = threading.Thread(target=self._update_loop, daemon=True)
             self.thread.start()
-            print(f"[D435] started at {self.width}x{self.height} @ {self.fps}fps")
+            mode = "RGB-D" if self.enable_depth else "RGB"
+            print(f"[D435] started at {self.width}x{self.height} @ {self.fps}fps ({mode})")
 
         except Exception as e:
             print(f"[!] D435 Camera {self.serial_number}: {e}")
@@ -134,12 +307,19 @@ class D435Camera:
         while not self.stopped and self.is_active:
             try:
                 frames = self.pipeline.wait_for_frames(timeout_ms=2000)
+                if self.enable_depth and self.align is not None:
+                    frames = self.align.process(frames)
                 color_frame = frames.get_color_frame()
+                depth_frame = frames.get_depth_frame() if self.enable_depth else None
                 if color_frame:
                     frame_data = np.asanyarray(color_frame.get_data())
                     if frame_data.shape == self.target_shape:
                         with self.lock:
                             self.latest_color = frame_data.copy()
+                            if depth_frame:
+                                depth_data = np.asanyarray(depth_frame.get_data())
+                                if depth_data.shape == self.latest_depth.shape:
+                                    self.latest_depth = depth_data.copy()
                             self.frame_count += 1
                             self.last_frame_time = time.time()
             except Exception:
@@ -151,12 +331,33 @@ class D435Camera:
                 "is_active": self.is_active,
                 "frame_count": self.frame_count,
                 "last_frame_time": self.last_frame_time,
-                "age_sec": time.time() - self.last_frame_time if self.last_frame_time > 0 else 999.0
+                "age_sec": time.time() - self.last_frame_time if self.last_frame_time > 0 else 999.0,
+                "enable_depth": self.enable_depth,
+                "depth_scale": self.depth_scale,
             }
 
     def get_frame(self):
         with self.lock:
             return self.latest_color.copy()
+
+    def get_depth_frame(self):
+        with self.lock:
+            return self.latest_depth.copy()
+
+    def get_intrinsics(self):
+        with self.lock:
+            intrinsics = dict(self.intrinsics or {})
+            if not intrinsics:
+                intrinsics = {
+                    "fx": 0.0,
+                    "fy": 0.0,
+                    "cx": 0.0,
+                    "cy": 0.0,
+                    "width": self.width,
+                    "height": self.height,
+                    "depth_scale": self.depth_scale,
+                }
+            return intrinsics
 
     def close(self):
         self.stopped = True
@@ -538,7 +739,7 @@ class ViveController:
 
 # ============ 数据录制模块 ============
 class DataRecorder:
-    def __init__(self, arm, arm_lock, cam_top, cam_wrist, target_fps=15):
+    def __init__(self, arm, arm_lock, cam_top, cam_wrist, target_fps=15, calibration_cfg=None):
         self.arm = arm
         self.arm_lock = arm_lock
         self.cam_top = cam_top
@@ -546,7 +747,24 @@ class DataRecorder:
         self.is_recording = False
         self.filename = None
         self.target_fps = target_fps
-        self.data_buffer = {'qpos': [], 'images_top': [], 'images_wrist': [], 'timestamps': []}
+        self.calibration_cfg = calibration_cfg or {}
+        self.cam_high_meta = get_camera_metadata(
+            self.calibration_cfg,
+            "cam_high",
+            fallback_intrinsics=self.cam_top.get_intrinsics() if hasattr(self.cam_top, "get_intrinsics") else None,
+        )
+        self.cam_wrist_meta = get_camera_metadata(self.calibration_cfg, "cam_wrist", fallback_intrinsics=None)
+        self.data_buffer = {
+            'qpos': [],
+            'images_top': [],
+            'depth_top': [],
+            'images_wrist': [],
+            'ee_pose': [],
+            'timestamps': [],
+            'target_roi_exo': [],
+            'target_3d_base': [],
+            'grounding_valid': [],
+        }
         self.dark_wrist_frames = 0
 
     def start(self, filename):
@@ -555,7 +773,17 @@ class DataRecorder:
         self.filename = filename
         self.is_recording = True
         self.dark_wrist_frames = 0
-        self.data_buffer = {'qpos': [], 'images_top': [], 'images_wrist': [], 'timestamps': []}
+        self.data_buffer = {
+            'qpos': [],
+            'images_top': [],
+            'depth_top': [],
+            'images_wrist': [],
+            'ee_pose': [],
+            'timestamps': [],
+            'target_roi_exo': [],
+            'target_3d_base': [],
+            'grounding_valid': [],
+        }
         self.record_start_time = time.time()
         self.thread = threading.Thread(target=self._record_loop, daemon=True)
         self.thread.start()
@@ -586,8 +814,10 @@ class DataRecorder:
                     code, state = self.arm.rm_get_current_arm_state()
 
                 joint_angles = state['joint'] if code == 0 else [0] * 6
+                ee_pose = extract_ee_pose_from_realman_state(state if code == 0 else {})
 
                 img_top = self.cam_top.get_frame()
+                depth_top = self.cam_top.get_depth_frame() if hasattr(self.cam_top, "get_depth_frame") else None
                 img_wrist = self.cam_wrist.get_frame()
 
                 wrist_mean = float(img_wrist.mean())
@@ -601,8 +831,15 @@ class DataRecorder:
 
                 self.data_buffer['qpos'].append(joint_angles)
                 self.data_buffer['images_top'].append(img_top)
+                self.data_buffer['depth_top'].append(
+                    np.asarray(depth_top if depth_top is not None else np.zeros(img_top.shape[:2], dtype=np.uint16), dtype=np.uint16)
+                )
                 self.data_buffer['images_wrist'].append(img_wrist)
+                self.data_buffer['ee_pose'].append(ee_pose.astype(np.float32))
                 self.data_buffer['timestamps'].append(timestamp)
+                self.data_buffer['target_roi_exo'].append(np.zeros(4, dtype=np.float32))
+                self.data_buffer['target_3d_base'].append(np.zeros(3, dtype=np.float32))
+                self.data_buffer['grounding_valid'].append(np.zeros(1, dtype=np.float32))
 
             except Exception as e:
                 print(f" >> Record error: {e}")
@@ -615,6 +852,11 @@ class DataRecorder:
         qpos = self.data_buffer['qpos']
         actions = qpos[1:] + [qpos[-1]]
         timestamps = self.data_buffer['timestamps']
+        depth_top = np.asarray(self.data_buffer["depth_top"], dtype=np.uint16)
+        ee_pose = np.asarray(self.data_buffer["ee_pose"], dtype=np.float32)
+        target_roi_exo = np.asarray(self.data_buffer["target_roi_exo"], dtype=np.float32)
+        target_3d_base = np.asarray(self.data_buffer["target_3d_base"], dtype=np.float32)
+        grounding_valid = np.asarray(self.data_buffer["grounding_valid"], dtype=np.float32)
 
         if len(timestamps) > 1:
             intervals = np.diff(timestamps)
@@ -638,10 +880,25 @@ class DataRecorder:
                     compression="gzip"
                 )
                 f.create_dataset(
+                    'observations/depth/cam_high',
+                    data=depth_top,
+                    compression="gzip"
+                )
+                f.create_dataset(
                     'observations/images/cam_wrist',
                     data=np.array(self.data_buffer['images_wrist'], dtype=np.uint8),
                     compression="gzip"
                 )
+                f.create_dataset('observations/ee_pose', data=ee_pose)
+                f.create_dataset('observations/grounding/target_roi_exo', data=target_roi_exo)
+                f.create_dataset('observations/grounding/target_3d_base', data=target_3d_base)
+                f.create_dataset('observations/grounding/valid', data=grounding_valid)
+                f.create_dataset("metadata/cameras/cam_high/intrinsics", data=self.cam_high_meta["intrinsics_array"])
+                f.create_dataset("metadata/cameras/cam_high/dist_coeffs", data=self.cam_high_meta["dist_coeffs"])
+                f.create_dataset("metadata/cameras/cam_high/T_base_cam", data=self.cam_high_meta["transform"])
+                f.create_dataset("metadata/cameras/cam_wrist/intrinsics", data=self.cam_wrist_meta["intrinsics_array"])
+                f.create_dataset("metadata/cameras/cam_wrist/dist_coeffs", data=self.cam_wrist_meta["dist_coeffs"])
+                f.create_dataset("metadata/cameras/cam_wrist/T_ee_cam", data=self.cam_wrist_meta["transform"])
             print(f"保存: {os.path.basename(self.filename)} ({len(qpos)} frames)")
         except Exception as e:
             print(f"[!] 保存失败: {e}")
@@ -663,6 +920,7 @@ def main():
     parser.add_argument('--task-name', type=str, default='task_pick_cube', help='任务名称')
     parser.add_argument('--fps', type=int, default=15, help='采集帧率，当前统一使用15')
     parser.add_argument('--teaching', action='store_true', help='示教模式（不用Vive）')
+    parser.add_argument('--calibration-config', type=str, default='configs/calibration_realman.yaml', help='相机与外参标定配置文件')
     args = parser.parse_args()
 
     if args.fps != 15:
@@ -679,8 +937,11 @@ def main():
     print(f"  RealMan RM65 {'示教' if args.teaching else 'Vive遥操作'} 数据采集")
     print("=" * 50)
 
-    print("初始化顶部相机 (d435)...")
-    cam_top = D435Camera(args.cam_top, fps=args.fps)
+    calibration_cfg, calibration_path = load_camera_calibration_config(args.calibration_config)
+    print(f"标定文件: {calibration_path}")
+
+    print("初始化顶部相机 (d435/d455 RGB-D)...")
+    cam_top = D435Camera(args.cam_top, fps=args.fps, enable_depth=True)
 
     print("初始化腕部相机 (ds87 ros rgb)...")
     cam_wrist = DS87RosCamera(topic=args.ds87_topic)
@@ -694,7 +955,7 @@ def main():
             "[DS87-ROS] status after init: "
             f"active={status['is_active']}, "
             f"frame_count={status['frame_count']}, "
-            f"last_frame_age={status['last_frame_age']}, "
+            f"age_sec={status['age_sec']:.3f}, "
             f"topic={status['topic']}"
         )
 
@@ -714,7 +975,7 @@ def main():
     if not args.teaching:
         print(f"Vive: {'OK' if vive_ctrl.tracker else 'FAIL'}")
 
-    recorder = DataRecorder(arm, arm_lock, cam_top, cam_wrist, args.fps)
+    recorder = DataRecorder(arm, arm_lock, cam_top, cam_wrist, args.fps, calibration_cfg=calibration_cfg)
 
     print("\n" + "-" * 50)
     if args.teaching:
@@ -781,7 +1042,7 @@ def main():
                             "[DS87-ROS] status before record: "
                             f"active={status['is_active']}, "
                             f"frame_count={status['frame_count']}, "
-                            f"last_frame_age={status['last_frame_age']}, "
+                            f"age_sec={status['age_sec']:.3f}, "
                             f"topic={status['topic']}"
                         )
                     filename = get_next_filename(args.save_dir, args.task_name)
@@ -794,7 +1055,7 @@ def main():
                             "[DS87-ROS] status after record: "
                             f"active={status['is_active']}, "
                             f"frame_count={status['frame_count']}, "
-                            f"last_frame_age={status['last_frame_age']}, "
+                            f"age_sec={status['age_sec']:.3f}, "
                             f"topic={status['topic']}"
                         )
                 elif cmd:

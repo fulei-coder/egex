@@ -1,0 +1,88 @@
+dataset:
+  repo_id: local/pick_cube_egexo_15fps
+  root: data/pick_cube_egexo_15fps
+  video_backend: pyav
+
+policy:
+  type: egexo_smolvla
+  repo_id: local/egexo_smolvla_realman
+
+  base_policy_type: smolvla
+  vlm_model_name: HuggingFaceTB/SmolVLM2-500M-Video-Instruct
+  load_vlm_weights: true
+
+  n_obs_steps: 1
+  chunk_size: 50
+  n_action_steps: 50
+  resize_imgs_with_padding: [512, 512]
+  tokenizer_max_length: 48
+
+  freeze_vision_encoder: true
+  train_expert_only: true
+  train_state_proj: true
+
+  num_vlm_layers: 16
+  num_expert_layers: -1
+  expert_width_multiplier: 0.75
+  attention_mode: cross_attn
+  num_steps: 10
+
+  image_keys:
+    exo: observation.images.cam_high
+    ego: observation.images.cam_wrist
+
+  state_key: observation.state
+  ee_pose_key: observation.ee_pose
+  ego_roi_key: observation.grounding.ego_roi
+  grounding_valid_key: observation.grounding.valid
+  phase_key: observation.phase
+
+  egexo:
+    use_exo: true
+    use_ego: true
+    use_view_embedding: true
+    use_crossview_grounding: true
+    grounding_mode: soft_mask
+    use_grounding_loss: true
+    use_phase_head: true
+    phase_mode: dual_head
+    action_mixing: soft
+    use_phase_embedding: true
+    phase_embedding_dim: 32
+    phase_embedding_scale: 0.25
+    phase_gate_hidden_dim: 64
+    phase_gate_use_ee_pose: true
+    use_dual_action_head: true
+    dual_action_head_hidden_dim: 128
+    dual_action_head_use_ee_pose: true
+
+  loss:
+    action_weight: 1.0
+    grounding_weight: 0.1
+    phase_weight: 0.05
+    cross_view_consistency_weight: 0.0
+    dual_action_weight: 0.1
+
+training:
+  batch_size: 4
+  steps: 50000
+  save_checkpoint: true
+  save_freq: 2500
+  eval_freq: 5000
+  log_freq: 50
+  output_dir: outputs/egexo_smolvla_realman
+  seed: 42
+  num_workers: 2
+
+wandb:
+  enable: false
+
+ablation:
+  use_exo: true
+  use_ego: true
+  use_depth_exo: true
+  use_crossview_grounding: true
+  use_grounding_loss: true
+  use_phase_head: true
+  use_dual_action_head: true
+  use_view_embedding: true

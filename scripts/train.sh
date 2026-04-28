@@ -15,6 +15,8 @@ set -e
 
 POLICY=${1:-act}
 RESUME=${2:-""}
+export PYTHONPATH="$(pwd)/src:${PYTHONPATH}"
+echo "PYTHONPATH: ${PYTHONPATH}"
 
 CONFIG_DIR="configs"
 CONFIG_FILE="${CONFIG_DIR}/${POLICY}_realman.yaml"
@@ -41,7 +43,11 @@ if command -v nvidia-smi &> /dev/null; then
 fi
 
 # 构建训练命令
-CMD="python -m lerobot.scripts.lerobot_train --config ${CONFIG_FILE}"
+if [ "$POLICY" == "egexo_smolvla" ]; then
+    CMD="python3 -m realman_vla.policies.egexo_smolvla.train --config ${CONFIG_FILE}"
+else
+    CMD="python -m lerobot.scripts.lerobot_train --config ${CONFIG_FILE}"
+fi
 
 # 断点续训
 if [ "$RESUME" == "resume" ]; then
@@ -50,9 +56,15 @@ if [ "$RESUME" == "resume" ]; then
     LAST_CKPT="${OUTPUT_DIR}/checkpoints/last/pretrained_model"
     
     if [ -d "$LAST_CKPT" ]; then
-        CMD="python -m lerobot.scripts.lerobot_train \
-            --config_path=${LAST_CKPT}/train_config.json \
-            --resume=true"
+        if [ "$POLICY" == "egexo_smolvla" ]; then
+            CMD="python3 -m realman_vla.policies.egexo_smolvla.train \
+                --config ${CONFIG_FILE} \
+                --resume-from ${LAST_CKPT}"
+        else
+            CMD="python -m lerobot.scripts.lerobot_train \
+                --config_path=${LAST_CKPT}/train_config.json \
+                --resume=true"
+        fi
         echo "📂 Resume from: ${LAST_CKPT}"
     else
         echo "⚠️  未找到 checkpoint，从头开始训练"
