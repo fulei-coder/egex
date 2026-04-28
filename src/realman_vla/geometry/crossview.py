@@ -107,9 +107,19 @@ def project_exo_roi_to_ego(
         result["reason"] = "invalid_depth"
         return result
 
-    T_exo_base = np.linalg.inv(np.asarray(T_base_exo, dtype=np.float32).reshape(4, 4))
-    target_3d_base = transform_point(T_exo_base, p_exo)
-    T_ego_base = np.linalg.inv(np.asarray(T_base_ee, dtype=np.float32).reshape(4, 4) @ np.asarray(T_ee_ego, dtype=np.float32).reshape(4, 4))
+    # T_base_exo is expected to map points from exo camera frame -> robot base frame.
+    # So lifting an exo-frame 3D point into base frame should use it directly.
+    T_base_exo = np.asarray(T_base_exo, dtype=np.float32).reshape(4, 4)
+    target_3d_base = transform_point(T_base_exo, p_exo)
+
+    # Wrist camera pose in base frame:
+    #   T_base_ego = T_base_ee @ T_ee_ego
+    # To project a base-frame point into ego frame, invert that chain.
+    T_base_ego = (
+        np.asarray(T_base_ee, dtype=np.float32).reshape(4, 4)
+        @ np.asarray(T_ee_ego, dtype=np.float32).reshape(4, 4)
+    )
+    T_ego_base = np.linalg.inv(T_base_ego)
     target_3d_ego = transform_point(T_ego_base, target_3d_base)
     uv, valid = project_point_to_image(target_3d_ego, ego_intrinsics)
     if not valid:

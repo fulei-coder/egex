@@ -11,32 +11,11 @@ from pathlib import Path
 
 import yaml
 
+from .register import register_with_lerobot
+
 
 SMOLVLA_ALLOWED_POLICY_KEYS = {
-    "type",
-    "repo_id",
-    "n_obs_steps",
-    "chunk_size",
-    "n_action_steps",
-    "vlm_model_name",
-    "load_vlm_weights",
-    "resize_imgs_with_padding",
-    "tokenizer_max_length",
-    "num_steps",
-    "freeze_vision_encoder",
-    "train_expert_only",
-    "train_state_proj",
-    "num_vlm_layers",
-    "num_expert_layers",
-    "expert_width_multiplier",
-    "attention_mode",
-    "optimizer_lr",
-    "optimizer_betas",
-    "optimizer_weight_decay",
-    "optimizer_grad_clip_norm",
-    "scheduler_warmup_steps",
-    "scheduler_decay_steps",
-    "scheduler_decay_lr",
+    # kept for backward compatibility in helper functions; no longer used to strip EgExo policy fields
 }
 
 
@@ -66,8 +45,10 @@ def translate_egexo_config(config_path: Path) -> tuple[dict, dict]:
         raise ValueError(f"Invalid egexo config: {config_path}")
 
     translated_cfg = _flatten_training_section(original_cfg)
+    ablation_cfg = dict(translated_cfg.get("ablation", {}) or {})
     translated_cfg["policy"] = dict(translated_cfg.get("policy", {}) or {})
     policy_cfg = dict(translated_cfg["policy"])
+    translated_cfg.pop("ablation", None)
     egexo_meta = {
         "type": policy_cfg.get("type", "egexo_smolvla"),
         "base_policy_type": policy_cfg.get("base_policy_type", "smolvla"),
@@ -79,10 +60,9 @@ def translate_egexo_config(config_path: Path) -> tuple[dict, dict]:
         "phase_key": policy_cfg.get("phase_key", "observation.phase"),
         "egexo": policy_cfg.get("egexo", {}),
         "loss": policy_cfg.get("loss", {}),
-        "ablation": translated_cfg.get("ablation", {}),
+        "ablation": ablation_cfg,
     }
-    policy_cfg["type"] = "smolvla"
-    translated_cfg["policy"] = {k: v for k, v in policy_cfg.items() if k in SMOLVLA_ALLOWED_POLICY_KEYS}
+    translated_cfg["policy"] = policy_cfg
     return translated_cfg, egexo_meta
 
 
@@ -142,6 +122,7 @@ def main():
     translated_cfg, egexo_meta = translate_egexo_config(config_path)
     translated_path, meta_path = write_translated_config(translated_cfg, egexo_meta)
     persist_egexo_metadata(meta_path, translated_cfg.get("output_dir"))
+    register_with_lerobot()
 
     env = os.environ.copy()
     env["PYTHONPATH"] = f"{Path.cwd() / 'src'}:{env.get('PYTHONPATH', '')}".rstrip(":")

@@ -370,6 +370,40 @@ class EgExoSmolVLAPolicy(SmolVLAPolicy):
         )
         return mixed_loss + 0.5 * (transport_loss + contact_loss)
 
+    def _compute_grounding_loss(self, batch: dict):
+        config = getattr(self, "config", None)
+        if torch is None or config is None:
+            return None
+
+        egexo_cfg = getattr(config, "egexo", {}) if config is not None else {}
+        if not egexo_cfg or not egexo_cfg.get("use_grounding_loss", True):
+            return None
+
+        valid_key = getattr(config, "grounding_valid_key", "observation.grounding.valid")
+        roi_key = getattr(config, "ego_roi_key", "observation.grounding.ego_roi")
+        valid = batch.get(valid_key)
+        roi = batch.get(roi_key)
+        if not torch.is_tensor(valid):
+            return None
+
+        valid = valid.reshape(-1, 1).float()
+        device = valid.device
+        dtype = valid.dtype
+        zero = torch.zeros((), device=device, dtype=dtype)
+
+        if not torch.is_tensor(roi) or roi.ndim != 2 or roi.shape[-1] != 4:
+            return zero
+
+        roi = roi.to(device=device, dtype=dtype)
+        widths = torch.clamp(roi[:, 2] - roi[:, 0], min=0.0)
+        heights = torch.clamp(roi[:, 3] - roi[:, 1], min=0.0)
+        area = widths * heights
+        valid_flat = valid.reshape(-1)
+        if float(valid_flat.sum().item()) <= 0:
+            return zero
+        normalized_area = area / torch.clamp(area.max().detach(), min=1.0)
+        return ((1.0 - normalized_area) * valid_flat).sum() / torch.clamp(valid_flat.sum(), min=1.0)
+
     def _extract_action_tensor_from_output(self, output):
         if torch is None:
             return None, None
@@ -393,6 +427,16 @@ class EgExoSmolVLAPolicy(SmolVLAPolicy):
             output = dict(output)
             config = getattr(self, "config", None)
             loss_cfg = getattr(config, "loss", {}) if config is not None else {}
+            grounding_loss = self._compute_grounding_loss(batch)
+            if grounding_loss is not None:
+                output["grounding_loss"] = grounding_loss
+                grounding_weight = float(loss_cfg.get("grounding_weight", 0.1))
+                if "loss" in output and output["loss"] is not None:
+                    output["loss"] = output["loss"] + grounding_weight * grounding_loss
+                elif "action_loss" in output and output["action_loss"] is not None:
+                    output["loss"] = output["action_loss"] + grounding_weight * grounding_loss
+                else:
+                    output["loss"] = grounding_weight * grounding_loss
 
             if phase_head_output is not None:
                 output["phase_logits"] = phase_head_output["phase_logits"]
